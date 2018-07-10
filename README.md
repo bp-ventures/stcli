@@ -35,9 +35,9 @@ less stcli.py
 Once you are satisfied it looks ok you can make it executable and then run it
 chmod +x stcli.py
 ./stcli.py
+type ? enter for help
 ```
 
-in the future this should be available on 
 
 ### TODO
 
@@ -46,6 +46,9 @@ in the future this should be available on
 * SEP 007
 * update SEP 006 support
 * integrate chrome for those who want to use a ledger
+* add to pypi
+* make a proper install
+* view order book, buy, sell
 
 
 
