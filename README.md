@@ -41,7 +41,11 @@ in the future this should be available on
 
 ### TODO
 
-There is a test suite for stellar_base but none for this mini app
+* There is a test suite for stellar_base but none for this mini app
+* path payments
+* SEP 007
+* update SEP 006 support
+* integrate chrome for those who want to use a ledger
 
 
 
