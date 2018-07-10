@@ -4,10 +4,17 @@ stcli - a repl command line crypto wallet for stellar that is simple and all in 
 ## Getting Started
 If you have the Ubuntu you may be able to just clone the one file stcli.py
 Everything resides in the one file... it will generate an stcli.conf in the same
-directory or an encrypted stcli.zip
+directory or an encrypted stcli.zip.
+
+The reason for this tiny app is I wanted a stellar wallet:
+* written in python
+* 100% auditable
+* usable from a secured server
+* for testing deposits and withdrawals
+* fully command line text based 
 
 
-THIS APP is MADE FOR TESTING PURPOSES
+THIS APP IS MADE FOR TESTING PURPOSES
 
 
 ### Prerequisites
@@ -37,7 +44,7 @@ chmod +x stcli.py
 ./stcli.py
 type ? enter for help
 ```
-
+![stcli help screen](https://user-images.githubusercontent.com/40919851/42498875-acfbe7ba-842d-11e8-97f5-169bc86a194e.png)
 
 ### TODO
 
@@ -49,6 +56,9 @@ type ? enter for help
 * add to pypi
 * make a proper install
 * view order book, buy, sell
+* multisig
+* modules 
+* offline
 
 
 
