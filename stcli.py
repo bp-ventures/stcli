@@ -296,9 +296,9 @@ def history():
 
 def fed(domain, address):
     FED = toml.loads(requests.get('https://' + domain + '/.well-known/stellar.toml').text)
-    url = '%s?q=%s&type=name' % (FED['FEDERATION_SERVER'], address)
-    print('getting federation with ' + url)
-    r = requests.get(url)
+    data = {'q': address, 'type': 'name'}
+    print('getting federation with ' + FED['FEDERATION_SERVER'] + " " + address)
+    r = requests.get(url=FED['FEDERATION_SERVER'], data=data)
     return r.json()
 
 
@@ -344,14 +344,6 @@ def send_asset(text):
         print('invalid syntax please use trust anchor asset')
         return
     amount, asset, address = val[1], val[2], val[3]
-    if len(val) == 6:
-        memo = val[4]
-        memo_type = val[5]
-    if len(val) == 5:
-        memo = val[4]
-        memo_type = 'text'
-    else:
-        memo = ''
     if '*' in address:
         res = fed(address.split('*')[1], address)
         sendto = res['account_id']
@@ -359,6 +351,14 @@ def send_asset(text):
         memo_type = res['memo_type']
     else:
         sendto = address
+        memo = ''
+    # override memo, type if given
+    if len(val) == 6:
+        memo = val[4]
+        memo_type = val[5]
+    if len(val) == 5:
+        memo = val[4]
+        memo_type = 'text'
     print_formatted_text(HTML("""Are you sure you want to send
                                 <ansiyellow>%s</ansiyellow>
                                 <ansired>%s %s</ansired>
