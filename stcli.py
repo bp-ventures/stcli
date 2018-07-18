@@ -298,7 +298,8 @@ def fed(domain, address):
     FED = toml.loads(requests.get('https://' + domain + '/.well-known/stellar.toml').text)
     data = {'q': address, 'type': 'name'}
     print('getting federation with ' + FED['FEDERATION_SERVER'] + " " + address)
-    r = requests.get(url=FED['FEDERATION_SERVER'], data=data)
+    r = requests.get(url=FED['FEDERATION_SERVER'], params=data)
+    print(r.text)
     return r.json()
 
 
@@ -336,14 +337,15 @@ def send_sanity(addr, memo_type, asset):
 
 def send_asset(text):
     # send 10 EURT antb123*papayame.com or send 1 XLM PUBKEY memo text
+    memo_type = 'text'
     if CONF['private_key'] == '':
         print('no private key setup  - use set to set key or c to create wallet')
         return
-    val = text.split(' ')
+    val = text.split()
     if len(val) < 3:
         print('invalid syntax please use trust anchor asset')
         return
-    amount, asset, address = val[1], val[2], val[3]
+    amount, asset, address = val[1], val[2].upper(), val[3]
     if '*' in address:
         res = fed(address.split('*')[1], address)
         sendto = res['account_id']
@@ -399,6 +401,7 @@ def start_app():
         create_conf()
         print('using public key:' + CONF['public_key'] + 'network: ' + CONF['network'])
     list_balances()
+
 
 def path_payment(text):
         print('..checking path payment options')
