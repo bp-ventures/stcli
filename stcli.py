@@ -44,7 +44,7 @@ def load_conf():
             unzip()
     if not os.path.isfile(PTC):
         create_conf()
-    os.chmod(PTC, 0700)
+    os.chmod(PTC, 0o700)
     with open(PTC, 'r') as fp:
         CONF = toml.loads(fp.read())
 
@@ -53,14 +53,14 @@ def unzip():
 
 
 def zipfile(passw):
-    os.chmod(PTC, 0700)
+    os.chmod(PTC, 0o700)
     if os.path.isfile(PTZ):
         cmd = "zip -u --password %s -m %s %s" % (passw, PTZ, PTC)
     else:
         cmd = "zip --password %s -m %s %s" % (passw, PTZ, PTC)
     print('zip --password ******* -m %s %s' % (PTZ, PTC))
     os.system(cmd)
-    os.chmod(PTZ, 0700)
+    os.chmod(PTZ, 0o700)
 
 
 def set_private_key():
@@ -78,7 +78,7 @@ def set_private_key():
     #print(CONF)
     with open(PTC, 'w') as fp:
         fp.write(toml.dumps(CONF))
-    os.chmod(PTC, 0700)
+    os.chmod(PTC, 0o700)
 
 
 def create_conf():
@@ -86,7 +86,7 @@ def create_conf():
         fp.write('public_key = ""\nprivate_key = ""\nnetwork = "TESTNET"\nlanguage ' +
                  '= "ENGLISH"\nstellar_address = ""\nairdrop="t"\npartner_key=""\n')
     load_conf()
-    os.chmod(PTC, 0700)
+    os.chmod(PTC, 0o700)
     return
 
 
