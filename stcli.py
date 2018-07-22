@@ -317,6 +317,7 @@ def get_balance_issuer(amount, asset):
 
 
 def send_sanity(addr, memo_type, asset):
+    if asset == 'BTC': return True
     r = requests.get('https://raw.githubusercontent.com/stellarterm/stellarterm/master/directory/directory.json')
     b = r.json()
     if addr not in b['destinations']:
@@ -343,7 +344,7 @@ def send_asset(text):
         return
     val = text.split()
     if len(val) < 3:
-        print('invalid syntax please use trust anchor asset')
+        print('invalid syntax please use send amount asset receiver e.g.  s 10 EURT antb123*papayame.com')
         return
     amount, asset, address = val[1], val[2].upper(), val[3]
     if '*' in address:
