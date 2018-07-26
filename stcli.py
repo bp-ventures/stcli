@@ -29,12 +29,11 @@ import pyqrcode
 PT = os.path.dirname(os.path.realpath(__file__))
 PTZ = PT + '/stcli.zip'
 PTC = PT + '/stcli.conf'
-
 CONF = {}
 compl = WordCompleter(['?', 'create', 'help', 'send', 'receive', 'trust',
                       'asset', 'deposit', 'withdrawal', 'settings', 'balance', 'version'], ignore_case=True)
 session = PromptSession(history=FileHistory('.myhistory'))
-VERSION = '0.14'
+VERSION = '0.1.5'
 
 def load_conf():
     global CONF
@@ -47,6 +46,7 @@ def load_conf():
     os.chmod(PTC, 0o700)
     with open(PTC, 'r') as fp:
         CONF = toml.loads(fp.read())
+
 
 def unzip():
     os.system('unzip -j -o '+ PTZ)
@@ -65,26 +65,25 @@ def zipfile(passw):
 
 def set_private_key():
     print('set private key')
-    #  global CONF
     if CONF['private_key'] != "":
         f = prompt('You have a private key... over ride for this session? (y/n)')
         if f.lower() != 'y': return
     CONF['private_key'] = prompt('Enter private key(masked): ', is_password=True)
-    #print(CONF['private_key'])
     c = Keypair.from_seed(CONF['private_key'])
     CONF['public_key'] = c.address().decode('ascii')
     CONF['network'] = 'PUBLIC'
-    #print(c.address().decode('ascii'))
-    #print(CONF)
     with open(PTC, 'w') as fp:
         fp.write(toml.dumps(CONF))
     os.chmod(PTC, 0o700)
+    print("set conf... to display conf type conf")
+    return
 
 
 def create_conf():
     with open(PTC, 'w') as fp:
         fp.write('public_key = ""\nprivate_key = ""\nnetwork = "TESTNET"\nlanguage ' +
-                 '= "ENGLISH"\nstellar_address = ""\nairdrop="t"\npartner_key=""\n')
+                 '= "ENGLISH"\nstellar_address = ""\nairdrop="t"\npartner_key=""\n'+
+                 'multisig=""')
     load_conf()
     os.chmod(PTC, 0o700)
     return
@@ -117,6 +116,8 @@ def set_var(text):
     if var[0] in ['inflation','home_domain']:
         set_account(var[0], var[1])
         return
+    if var[0] in ['multisig']:
+        set_multisig(var[1])
     if len(var) < 2:
         print('format is set var=val')
         return
@@ -259,6 +260,7 @@ def print_help():
                 conf - prints configuration
                 set key=var .. e.g. set network=PUBLIC (do not use for private key - use k)
                 set inflation=tempo.eu.como not use for private key - use k)
+                set multisig=GPUBKEY sets a public key for multisig)
 
      AUTHOR:
             Put together by Anthony Barker for testing purposes
@@ -338,11 +340,11 @@ def send_sanity(addr, memo_type, asset):
 
 def send_asset(text):
     # send 10 EURT antb123*papayame.com or send 1 XLM PUBKEY memo text
-    memo_type = 'text'
     if CONF['private_key'] == '':
-        print('no private key setup  - use set to set key or c to create wallet')
+        print('no private key setup  - pls type set to set key or c to create wallet')
         return
     val = text.split()
+    memo_type = 'text'
     if len(val) < 3:
         print('invalid syntax please use send amount asset receiver e.g.  s 10 EURT antb123*papayame.com')
         return
@@ -382,8 +384,33 @@ def send_asset(text):
         send.add_text_memo(memo)
     if memo != '' and memo_type == 'id':
         send.add_id_memo(memo)
+    if CONF['multisig'] != '':
+        print('You have 2of2 multisig - send this data to the other key to sign when you get it back type signsend data')
+        print(send.gen_xdr())
+        return
     send.sign()
     send.submit()
+
+
+def signsend(text):
+    cont = session.prompt(u'You want to sign or send? (sign/send) > ')
+    data = text.split()[1]
+    if cont.lower() == 'sign':
+        print(' signing ' + data)
+        sign = Builder(CONF['private_key'], network=CONF['network'])
+        sign.import_from_xdr(data)
+        #key = session.prompt(u'Enter who you sign for? %s > ' % CONF['multisig'])
+	sign.sign()
+	print("send this to the other wallet and ask them to signsend it\n")
+	print(sign.gen_xdr())
+        return
+    print(' signing and sending ' + data)
+    c = Builder(CONF['private_key'], network=CONF['network'])
+    c.import_from_xdr(data)
+    c.sign()
+    data = c.submit()
+    print(data)
+    return
 
 
 def start_app():
@@ -405,7 +432,7 @@ def start_app():
 
 
 def path_payment(text):
-        print('..checking path payment options')
+        print('..checking path payment options not yet implemented')
 
 
 def deposit(text):
@@ -466,6 +493,26 @@ def deposit(text):
                          + str(int(res['eta']/60)) + ' min to make the payment. Amount min ' + asset + ' ' +
                          min_amount + ' and max ' + max_amount  + ' ' + res['extra_info']))
     return
+
+
+def set_multisig(trusted_key):
+    print_formatted_text(HTML('<ansiblue>\n### SET MULTISIG ###</ansiblue>\n'))
+    print('set multisig will currently make your key a 2 of 2 multisig address')
+    print_formatted_text(HTML('trusted key is:<ansired>'+ trusted_key +'</ansired>'))
+    print('it will set med threshold and high to 2 and master weight to 1 so you can use 2 keys for all sending or issuing tokens\n\n')
+    b = Builder(CONF['private_key'], network=CONF['network'])
+    b.append_set_options_op(master_weight=1,
+			med_threshold=2,
+			high_threshold=2,
+			signer_address=trusted_key,
+			signer_type='ed25519PublicKey',
+			signer_weight=1,
+			source=None)
+    b.sign()
+    val = b.submit()
+    print(val)
+    return
+
 
 
 def withdrawal(text):
@@ -534,7 +581,7 @@ if __name__ == "__main__":
         elif text == 'create' or text == 'c': create_wallet()
         elif text == 'balance' or text == 'b': list_balances()
         elif text == 'history' or text == 'h': history()
-        elif text == 'settings'or text == 's': print(CONF)
+        elif text[:8] == 'signsend': signsend(text)
         elif text == 'quit'or text == 'q': sys_exit()
         elif text == 'key'or text == 'k': set_private_key()
         elif text == 'receive'or text == 'r': receive()
