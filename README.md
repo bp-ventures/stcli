@@ -12,9 +12,11 @@ The reason for this tiny app is I wanted a stellar wallet:
 * usable from a secured server
 * for testing deposits and withdrawals
 * fully command line text based 
+* keep on a USB key and run under tails
+* multisig that can be used on a read only linux box
 
 
-THIS APP IS MADE FOR TESTING PURPOSES
+THIS APP IS MADE FOR TESTING PURPOSES AUTHORS TAKE NO RESPONSIBILITY FOR USE
 
 
 ### Prerequisites
@@ -56,7 +58,6 @@ type ? enter for help
 * add to pypi
 * make a proper install
 * view order book, buy, sell
-* multisig
 * modules 
 * offline
 
