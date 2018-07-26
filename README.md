@@ -1,5 +1,5 @@
 # stcli
-stcli - a repl command line crypto wallet for stellar that is simple and all in one file
+stcli - a repl command line crypto wallet for stellar that is simple and all in one python file
 
 ## Getting Started
 If you have the Ubuntu you may be able to just clone the one file stcli.py
