@@ -38,7 +38,7 @@ PyQRCode>=1.2.1
 ```
 git clone https://github.com/antb123/stcli.git
 cd stcli
-pip install -r requirements.txt
+sudo pip install -r requirements.txt
 less stcli.py
 
 Once you are satisfied it looks ok you can make it executable and then run it
