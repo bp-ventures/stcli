@@ -332,7 +332,7 @@ def send_sanity(addr, memo_type, asset):
             print('invalid memo type ' + match['name'] + ' requires ' + match['requiredMemoType'])
             return False
     if 'acceptedAssetsWhitelist' in match:
-        if asset[:3] != match['acceptedAssetsWhitelist'][:3]:
+        if asset[:3] not in [ x[:3] for x in match['acceptedAssetsWhitelist']]:
             print('it looks like you are sending an asset the destination does not accept ')
             return False
     return True
