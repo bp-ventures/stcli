@@ -352,8 +352,12 @@ def send_asset(text):
     if '*' in address:
         res = fed(address.split('*')[1], address)
         sendto = res['account_id']
-        memo = res['memo']
-        memo_type = res['memo_type']
+        try:
+            memo = res['memo']
+            memo_type = res['memo_type']
+        except:
+            memo = ''
+            memo_type = ''
     else:
         sendto = address
         memo = ''
@@ -389,7 +393,9 @@ def send_asset(text):
         print(send.gen_xdr())
         return
     send.sign()
-    send.submit()
+    res = send.submit()
+    print(res)
+    return
 
 
 def signsend(text):
