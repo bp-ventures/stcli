@@ -1,13 +1,5 @@
-<<<<<<< Updated upstream
 toml==0.9.4
 prompt_toolkit==2.0.3
 requests==2.13.0
 stellar_base==0.1.8.1
 PyQRCode==1.2.1
-=======
-toml>=0.9.4
-prompt_toolkit>=2.0.3
-requests>=2.13.0
-stellar_base>=0.1.6
-PyQRCode>=1.2.1
->>>>>>> Stashed changes
