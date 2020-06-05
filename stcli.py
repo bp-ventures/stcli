@@ -23,9 +23,13 @@ from prompt_toolkit.history import FileHistory
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
 from prompt_toolkit import PromptSession
 from prompt_toolkit.completion import WordCompleter
-from stellar_base.builder import Builder, HORIZON_TEST, HORIZON_LIVE
-from stellar_base.keypair import Keypair
-from stellar_base.address import Address, AccountNotExistError
+from stellar_sdk.server import Server
+from stellar_sdk.exceptions import NotFoundError
+from stellar_sdk.keypair import Keypair
+from stellar_sdk.sep.mnemonic import StellarMnemonic
+from stellar_sdk.transaction_builder import TransactionBuilder
+from stellar_sdk.network import Network
+from stellar_sdk.xdr.StellarXDR_type import SignerKey
 from prompt_toolkit import print_formatted_text, HTML
 #optional
 import pyqrcode
@@ -73,8 +77,7 @@ def set_private_key():
         f = prompt('You have a private key... over ride for this session? (y/n)')
         if f.lower() != 'y': return
     CONF['private_key'] = prompt('Enter private key(masked): ', is_password=True)
-    c = Keypair.from_seed(CONF['private_key'])
-    CONF['public_key'] = c.address().decode('ascii')
+    CONF['public_key'] = keypair().public_key
     CONF['network'] = 'PUBLIC'
     with open(PTC, 'w') as fp:
         fp.write(toml.dumps(CONF))
@@ -93,6 +96,10 @@ def create_conf():
     return
 
 
+def keypair():
+    return Keypair.from_secret(CONF['private_key'])
+
+
 def fund():
     if CONF['public_key'] == '': create_wallet()
     if CONF['network'] == 'PUBLIC':
@@ -103,15 +110,21 @@ def fund():
     print(r.text)
 
 
+def transaction_builder():
+    account = server().load_account(CONF['public_key'])
+    return TransactionBuilder(source_account=account, network_passphrase=network_passphrase())
+
+
 def set_account(settype, var1):
     print('set account')
-    sa = Builder(CONF['private_key'], network=CONF['network'])
+    builder = transaction_builder()
     if settype == 'inflation':
-        sa.append_set_options_op(inflation=var1)
+        builder.append_set_options_op(inflation_dest=var1)
     else:
-        sa.append_set_options_op(home_domain=var1)
-    sa.sign()
-    sa.submit()
+        builder.append_set_options_op(home_domain=var1)
+    envelope = builder.build()
+    envelope.sign(keypair())
+    server().submit_transaction(envelope)
 
 
 def set_var(text):
@@ -140,10 +153,9 @@ def create_wallet():
     else:
         print('.. on testnet... hit f after this to fund')
     print('Public key this is where people send funds to. You need to fund with some lumens to get started\n')
-    print_formatted_text(HTML('<ansired>' + kp.address().decode('ascii') + '</ansired>'))
+    print_formatted_text(HTML('<ansired>' + kp.public_key + '</ansired>'))
     print('\nPrivate key please ensure you store securely\n')
-    print_formatted_text(HTML('<ansiyellow>' + kp.seed().decode('ascii') + '</ansiyellow>'))
-    from stellar_base.utils import StellarMnemonic
+    print_formatted_text(HTML('<ansiyellow>' + kp.secret + '</ansiyellow>'))
     sm = StellarMnemonic(CONF['language'].lower())
     secret_phrase = sm.generate()
     print('\n if you loose your key you can recreate it with this special passphrase:\n')
@@ -157,8 +169,8 @@ def create_wallet():
     if CONF['public_key'] != '':
         print('only one public key is currently supported')
         return
-    CONF['public_key'] = kp.address().decode('ascii')
-    CONF['private_key'] = kp.seed().decode('ascii')
+    CONF['public_key'] = kp.public_key
+    CONF['private_key'] = kp.secret
     with open(PTC, 'w') as fp:
         fp.write(toml.dumps(CONF))
     if CONF['network'] != 'TESTNET':
@@ -166,33 +178,34 @@ def create_wallet():
 
 
 def list_balances(check_asset=''):
-    #print('Using public key: ' + CONF['public_key'])
-    c = Address(CONF['public_key'], network=CONF['network'])
     try:
-        c.get()
-    except AccountNotExistError:
+        account = server().accounts().account_id(CONF['public_key']).call()
+    except NotFoundError:
         print_formatted_text(HTML('<ansiyellow>unfunded account... </ansiyellow> '
                              'you need to hit <ansiblue>f to fund for testnet or type key for public</ansiblue> '))
         return
-    r = requests.get("https://api.coinmarketcap.com/v1/ticker/stellar/?convert=EUR")
-    rate = r.json()[0]
+
+    r = requests.get('https://api.kraken.com/0/public/Ticker?pair=BTCEUR,XLMEUR,ETHEUR')
+    data = r.json()['result']
+    price_eur = data['XXLMZEUR']['c'][0]
     #  print('.. rate ' + str(rate))
-    for x in c.balances:
+    for x in account['balances']:
         if x['asset_type'] == 'native':
-            if check_asset != '': continue
-            usd_val = float(rate['price_usd']) * float(x['balance'])
-            eur_val = float(rate['price_eur']) * float(x['balance'])
-            print_formatted_text(HTML('XLM: <ansiblue>' + x['balance'] + '</ansiblue> value: USD:' + "{:.2f}".format(usd_val)
-                    + ' EUR:' + "{:.2f}".format(eur_val)))
+            if check_asset != '':
+                continue
+            eur_val = float(price_eur) * float(x['balance'])
+            print_formatted_text(HTML('XLM: <ansiblue>' + x['balance'] + '</ansiblue> EUR:' + "{:.2f}".format(eur_val)))
         else:
             if check_asset != '':
                 if check_asset.upper() == x['asset_code'].upper():
                     return True
             else:
                 print_formatted_text(HTML(x['asset_code'] + ' <ansiblue>' + x['balance'] + '</ansiblue>'))
-    if check_asset != '': return False
+    if check_asset != '':
+        return False
 
 
+"""
 def list_assets():
     print('list assets')
     url = 'https://raw.githubusercontent.com/stellarterm/stellarterm/master/directory/directory.json'
@@ -206,6 +219,14 @@ def list_assets():
             ass += y + ' '
         print_formatted_text(HTML('<ansired>' + ass + '</ansired>'))
     print('trust domain asset .. e.g. trust tempo.eu.com EURT')
+"""
+
+
+def network_passphrase():
+    if CONF['network'] == 'PUBLIC':
+        return Network.PUBLIC_NETWORK_PASSPHRASE
+    else:
+        return Network.TESTNET_NETWORK_PASSPHRASE
 
 
 def trust_asset(text):
@@ -214,27 +235,25 @@ def trust_asset(text):
         return
     val = text.split(' ')
     if len(val) != 3:
-        print('invalid syntax please use trust anchor asset')
+        if val[0][0] == 't':
+            print('invalid syntax please use trust <issuer pubkey> <asset code>')
+        else:
+            print('invalid syntax please use untrust <issuer pubkey> <asset code>')
         return
-    url = 'https://raw.githubusercontent.com/stellarterm/stellarterm/master/directory/directory.json'
-    r = requests.get(url)
-    b = json.loads(r.text)
-    asset_name = val[-1].upper()
-    asset_anchor = val[1]
-    try:
-        asset_key = b['anchors'][asset_anchor]['assets'][asset_name].split('-')[1]
-    except Exception:
-        print('unabled to find anchor or asset so quiting trust')
-        return
-    trst = Builder(CONF['private_key'], network=CONF['network'])
-    if val[0] == 'trust':
-        print('trusting.. ' + asset_name + ' ' + asset_key)
-        trst.append_trust_op(asset_key, asset_name)
+    asset_issuer = val[1]
+    asset_code = val[2]
+
+    builder = transaction_builder()
+    if val[0][0] == 't':
+        print('trusting asset_code=' + asset_code + ' issuer=' + asset_issuer)
+        builder.append_change_trust_op(asset_code, asset_issuer)
     else:
-        print('untrust ' + asset_name + ' ' + asset_key + ' please ensure your balance is 0 before this operation')
-        trst.append_trust_op(asset_key, asset_name, limit=0)
-    trst.sign()
-    trst.submit()
+        print('untrusting asset_code=' + asset_code + ' issuer=' + asset_issuer + ', please ensure your balance is 0 before this operation')
+        builder.append_change_trust_op(asset_code, asset_issuer, limit='0')
+
+    envelope = builder.build()
+    envelope.sign(keypair())
+    server().submit_transaction(envelope)
 
 
 def print_help():
@@ -251,7 +270,6 @@ def print_help():
                 b [balances] - shows the balances of all assets
                 t [trust] - shows the trust lines and allows trust of new assets
                 u [untrust] - allows remove of trust lines were the balance is 0
-                l [list] assets - shows all the assets known to stellarterm
                 c [create] - creates a new private and public keypair
                 k [key] - sets private key
                 f [fund] - fund a testnet address
@@ -282,22 +300,21 @@ def receive():
                              + CONF['stellar_address'] + '</ansired>\n\n'))
 
 
-def horiz_lp():
-    if CONF['network'] == 'PUBLIC': return HORIZON_LIVE
-    return HORIZON_TEST
+def horizon_url():
+    if CONF['network'] == 'PUBLIC':
+        return "https://horizon.stellar.org/"
+    return "https://horizon-testnet.stellar.org/"
 
 
 def history():
-    c = Address(CONF['public_key'], network=CONF['network'])
-    c.get()
-    h = c.payments(limit=30, order='desc')
-    for x in h[u'_embedded']['records']:
+    payments = server().payments().for_account(CONF['public_key']).limit(30).order('desc').call()[u'_embedded']['records']
+    for x in payments:
         if x['type'] == 'create_account':
             print(x['created_at'] + ' ' + x['type'] + ' start ' + x['starting_balance'] + '\n'
-                  + horiz_lp() + '/operations/' + x['id'])
+                  + horizon_url() + 'operations/' + x['id'])
         else:
             print(x['created_at'] + ' ' + x['type'] + ' ' + x['to'] + ' ' + x['from'] + ' ' + x['amount'] +
-                  '\n' + horiz_lp() + '/operations/' + x['id'])
+                  '\n' + horizon_url() + 'operations/' + x['id'])
 
 
 def fed(domain, address):
@@ -310,10 +327,10 @@ def fed(domain, address):
 
 
 def get_balance_issuer(amount, asset):
-    if asset == 'XLM': return 0, ""
-    c = Address(CONF['public_key'], network=CONF['network'])
-    c.get()
-    for b in c.balances:
+    if asset == 'XLM':
+        return 0, ""
+    account = server().accounts().account_id(CONF['public_key']).call()
+    for b in account['balances']:
         if asset == b['asset_code']:
             if float(b['balance']) < float(amount):
                 print('error insufficient funds')
@@ -322,6 +339,7 @@ def get_balance_issuer(amount, asset):
                 return 0, b['asset_issuer']
 
 
+"""
 def send_sanity(addr, memo_type, asset):
     if asset == 'BTC': return True
     r = requests.get('https://raw.githubusercontent.com/stellarterm/stellarterm/master/directory/directory.json')
@@ -340,6 +358,7 @@ def send_sanity(addr, memo_type, asset):
             print('it looks like you are sending an asset the destination does not accept ')
             return False
     return True
+"""
 
 
 def send_asset(text):
@@ -381,46 +400,38 @@ def send_asset(text):
     if text != 'y': return
     ret, asset_issuer = get_balance_issuer(amount, asset)
     if ret: return
-    retsan = send_sanity(sendto, memo_type, asset)
-    if not retsan: return
-    send = Builder(CONF['private_key'], network=CONF['network'])
+    #retsan = send_sanity(sendto, memo_type, asset)
+    #if not retsan: return
+    builder = transaction_builder()
     if asset != 'XLM':
-        send.append_payment_op(sendto, amount, asset, asset_issuer)
+        builder.append_payment_op(sendto, amount, asset, asset_issuer)
     else:
-        send.append_payment_op(sendto, amount)
+        builder.append_payment_op(sendto, amount)
     if memo != '' and memo_type == 'text':
-        send.add_text_memo(memo)
+        builder.add_text_memo(memo)
     if memo != '' and memo_type == 'id':
-        send.add_id_memo(memo)
+        builder.add_id_memo(memo)
+    envelope = builder.build()
     if CONF['multisig'] != '':
         print('You have 2of2 multisig - send this data to the other key to sign when you get it back type signsend data')
-        print(send.gen_xdr())
+        print(envelope.to_xdr())
         return
-    send.sign()
-    res = send.submit()
-    print(res)
-    return
+    envelope.sign(keypair())
+    print(server().submit_transaction(envelope))
 
 
 def signsend(text):
     cont = session.prompt(u'You want to sign or send? (sign/send) > ')
     data = text.split()[1]
+    builder = transaction_builder()
     if cont.lower() == 'sign':
         print(' signing ' + data)
-        sign = Builder(CONF['private_key'], network=CONF['network'])
-        sign.import_from_xdr(data)
+        builder.from_xdr(data, network_passphrase=network_passphrase())
         #key = session.prompt(u'Enter who you sign for? %s > ' % CONF['multisig'])
-    sign.sign()
+    envelope = builder.build()
+    envelope.sign(keypair())
     print("send this to the other wallet and ask them to signsend it\n")
-    print(sign.gen_xdr())
-    return
-    print(' signing and sending ' + data)
-    c = Builder(CONF['private_key'], network=CONF['network'])
-    c.import_from_xdr(data)
-    c.sign()
-    data = c.submit()
-    print(data)
-    return
+    print(envelope.to_xdr())
 
 
 def start_app():
@@ -438,7 +449,8 @@ def start_app():
     except Exception:
         create_conf()
         print('using public key:' + CONF['public_key'] + 'network: ' + CONF['network'])
-    list_balances()
+    if CONF['public_key']:
+        list_balances()
 
 
 def path_payment(text):
@@ -510,18 +522,15 @@ def set_multisig(trusted_key):
     print('set multisig will currently make your key a 2 of 2 multisig address')
     print_formatted_text(HTML('trusted key is:<ansired>'+ trusted_key +'</ansired>'))
     print('it will set med threshold and high to 2 and master weight to 1 so you can use 2 keys for all sending or issuing tokens\n\n')
-    b = Builder(CONF['private_key'], network=CONF['network'])
-    b.append_set_options_op(master_weight=1,
+    builder = transaction_builder()
+    signer = SignerKey.ed25519_public_key(trusted_key, 1)
+    builder.append_set_options_op(master_weight=1,
             med_threshold=2,
             high_threshold=2,
-            signer_address=trusted_key,
-            signer_type='ed25519PublicKey',
-            signer_weight=1,
-            source=None)
-    b.sign()
-    val = b.submit()
-    print(val)
-    return
+            signer=signer)
+    envelope = builder.build()
+    envelope.sign(keypair())
+    print(server().submit_transaction(envelope))
 
 
 def withdrawal(text):
@@ -573,6 +582,10 @@ def withdrawal(text):
     return
 
 
+def server():
+    return Server(horizon_url=horizon_url())
+
+
 def sys_exit():
     saveconf = session.prompt(u'save zip encrypted configuration (y/n)> ')
     if saveconf.lower() == 'y':
@@ -586,6 +599,7 @@ if __name__ == "__main__":
     while True:
         text = session.prompt(u'> ', completer=compl, complete_while_typing=True,
                               vi_mode=True, auto_suggest=AutoSuggestFromHistory())
+        text = text.strip()
         if text == 'help' or text == '?': print_help()
         elif text == '': continue
         elif text == 'create' or text == 'c': create_wallet()
@@ -596,7 +610,7 @@ if __name__ == "__main__":
         elif text == 'key'or text == 'k': set_private_key()
         elif text == 'receive'or text == 'r': receive()
         elif text == 'fund'or text == 'f': fund()
-        elif text == 'list'or text == 'l': list_assets()
+        #elif text == 'list'or text == 'l': list_assets()
         elif text == 'conf': print(toml.dumps(CONF))
         elif text.split(" ")[0] == 'set':
             set_var(text)
