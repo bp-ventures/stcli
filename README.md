@@ -24,27 +24,14 @@ Command line - preferably Linux but MacOS or Windows 10 with Linux should work
 * python
 * zip/unzip
 
-These libraries:
-```
-toml>=0.9.4
-prompt_toolkit>=2.0.3
-requests>=2.13.0
-stellar_base>=0.1.6
-PyQRCode>=1.2.1
-```
-
 ### Installing
 
 ```
 git clone https://github.com/antb123/stcli.git
 cd stcli
 sudo pip install -r requirements.txt
-less stcli.py
-
-Once you are satisfied it looks ok you can make it executable and then run it
-chmod +x stcli.py
 ./stcli.py
-type ? enter for help
+press ? for help
 ```
 ![stcli help screen](https://user-images.githubusercontent.com/40919851/42498875-acfbe7ba-842d-11e8-97f5-169bc86a194e.png)
 
