@@ -19,3 +19,5 @@ venv.bak/
 #conf
 *.conf
 *.zip
+
+/.myhistory
