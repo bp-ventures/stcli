@@ -13,7 +13,10 @@
 PEP E401, E501 and E701 ignored
 '''
 from __future__ import unicode_literals, print_function
-import requests, json, sys, os
+import requests
+import json
+import sys
+import os
 import toml
 from prompt_toolkit import prompt
 from prompt_toolkit.history import FileHistory
@@ -34,6 +37,7 @@ compl = WordCompleter(['?', 'create', 'help', 'send', 'receive', 'trust',
                       'asset', 'deposit', 'withdrawal', 'settings', 'balance', 'version'], ignore_case=True)
 session = PromptSession(history=FileHistory('.myhistory'))
 VERSION = '0.1.5'
+
 
 def load_conf():
     global CONF
@@ -81,8 +85,8 @@ def set_private_key():
 
 def create_conf():
     with open(PTC, 'w') as fp:
-        fp.write('public_key = ""\nprivate_key = ""\nnetwork = "TESTNET"\nlanguage ' +
-                 '= "ENGLISH"\nstellar_address = ""\nairdrop="t"\npartner_key=""\n'+
+        fp.write('public_key = ""\nprivate_key = ""\nnetwork = "TESTNET"\nlanguage '
+                 '= "ENGLISH"\nstellar_address = ""\nairdrop="t"\npartner_key=""\n'
                  'multisig=""')
     load_conf()
     os.chmod(PTC, 0o700)
@@ -167,7 +171,7 @@ def list_balances(check_asset=''):
     try:
         c.get()
     except AccountNotExistError:
-        print_formatted_text(HTML('<ansiyellow>unfunded account... </ansiyellow> ' +
+        print_formatted_text(HTML('<ansiyellow>unfunded account... </ansiyellow> '
                              'you need to hit <ansiblue>f to fund for testnet or type key for public</ansiblue> '))
         return
     r = requests.get("https://api.coinmarketcap.com/v1/ticker/stellar/?convert=EUR")
@@ -179,7 +183,7 @@ def list_balances(check_asset=''):
             usd_val = float(rate['price_usd']) * float(x['balance'])
             eur_val = float(rate['price_eur']) * float(x['balance'])
             print_formatted_text(HTML('XLM: <ansiblue>' + x['balance'] + '</ansiblue> value: USD:' + "{:.2f}".format(usd_val)
-                  + ' EUR:' + "{:.2f}".format(eur_val)))
+                    + ' EUR:' + "{:.2f}".format(eur_val)))
         else:
             if check_asset != '':
                 if check_asset.upper() == x['asset_code'].upper():
@@ -196,7 +200,7 @@ def list_assets():
     b = json.loads(r.text)
     #    print(asset)
     for x in b['anchors']:
-        print(b['anchors'][x]['name']+":")
+        print(b['anchors'][x]['name'] + ":")
         ass = ''
         for y in b['anchors'][x]['assets'].keys():
             ass += y + ' '
@@ -219,7 +223,7 @@ def trust_asset(text):
     asset_anchor = val[1]
     try:
         asset_key = b['anchors'][asset_anchor]['assets'][asset_name].split('-')[1]
-    except:
+    except Exception:
         print('unabled to find anchor or asset so quiting trust')
         return
     trst = Builder(CONF['private_key'], network=CONF['network'])
@@ -355,7 +359,7 @@ def send_asset(text):
         try:
             memo = res['memo']
             memo_type = res['memo_type']
-        except:
+        except Exception:
             memo = ''
             memo_type = ''
     else:
@@ -383,7 +387,7 @@ def send_asset(text):
     if asset != 'XLM':
         send.append_payment_op(sendto, amount, asset, asset_issuer)
     else:
-         send.append_payment_op(sendto, amount)
+        send.append_payment_op(sendto, amount)
     if memo != '' and memo_type == 'text':
         send.add_text_memo(memo)
     if memo != '' and memo_type == 'id':
@@ -406,10 +410,10 @@ def signsend(text):
         sign = Builder(CONF['private_key'], network=CONF['network'])
         sign.import_from_xdr(data)
         #key = session.prompt(u'Enter who you sign for? %s > ' % CONF['multisig'])
-	sign.sign()
-	print("send this to the other wallet and ask them to signsend it\n")
-	print(sign.gen_xdr())
-        return
+    sign.sign()
+    print("send this to the other wallet and ask them to signsend it\n")
+    print(sign.gen_xdr())
+    return
     print(' signing and sending ' + data)
     c = Builder(CONF['private_key'], network=CONF['network'])
     c.import_from_xdr(data)
@@ -426,19 +430,19 @@ def start_app():
     try:
         if 'private_key' not in CONF:
             create_conf()
-    except:
+    except Exception:
         print('no wallet? type k [key] to set the private key or c [create] to create wallet')
     try:
         print_formatted_text(HTML('Public key: <ansiyellow>' + CONF['public_key']
                              + '</ansiyellow> network: ' + CONF['network']))
-    except:
+    except Exception:
         create_conf()
         print('using public key:' + CONF['public_key'] + 'network: ' + CONF['network'])
     list_balances()
 
 
 def path_payment(text):
-        print('..checking path payment options not yet implemented')
+    print('..checking path payment options not yet implemented')
 
 
 def deposit(text):
@@ -448,14 +452,14 @@ def deposit(text):
     r = text.split()
     if len(r) > 2:
         server = text.split()[1]
-        asset =  text.split()[2].upper()
+        asset = text.split()[2].upper()
         print("deposit to " + server + " asset " + asset)
     else:
         print("server asset e.g. apay.io bch or naobtc.com btc")
         res = session.prompt(u'server asset > ')
         try:
             server, asset = res.split()[0], res.split()[1]
-        except:
+        except Exception:
             print('format error')
             return
     if server not in ['tempo.eu.com','apay.io','naobtc.com']:
@@ -476,7 +480,7 @@ def deposit(text):
         #url = '%s?asset_code=%s&account=%s' % (deposit_server, asset.upper(), CONF['public_key'])
     elif server == 'tempo.eu.com':
         param['email'] = session.prompt(u' email address > ')
-        param['method'] = 'sepa' #session.prompt(u'method default: sepa (sepa, swift, cash, unistream) > ', default='sepa')
+        param['method'] = 'sepa'  # session.prompt(u'method default: sepa (sepa, swift, cash, unistream) > ', default='sepa')
         print('deposit needs to happen using sepa')
         #url = '%s?asset_code=%s&account=%s&email=%s' % (deposit_server, asset.upper(), CONF['public_key'], email)
     else:
@@ -496,8 +500,8 @@ def deposit(text):
     min_amount = str(res.setdefault('min_amount', ''))
     max_amount = str(res.setdefault('max_amount', ''))
     print_formatted_text(HTML('\nSEND ' + asset + ' to <ansiyellow> ' + res['how'] + ' </ansiyellow> you have '
-                         + str(int(res['eta']/60)) + ' min to make the payment. Amount min ' + asset + ' ' +
-                         min_amount + ' and max ' + max_amount  + ' ' + res['extra_info']))
+                         + str(int(res['eta'] / 60)) + ' min to make the payment. Amount min ' + asset + ' ' +
+                         min_amount + ' and max ' + max_amount + ' ' + res['extra_info']))
     return
 
 
@@ -508,17 +512,16 @@ def set_multisig(trusted_key):
     print('it will set med threshold and high to 2 and master weight to 1 so you can use 2 keys for all sending or issuing tokens\n\n')
     b = Builder(CONF['private_key'], network=CONF['network'])
     b.append_set_options_op(master_weight=1,
-			med_threshold=2,
-			high_threshold=2,
-			signer_address=trusted_key,
-			signer_type='ed25519PublicKey',
-			signer_weight=1,
-			source=None)
+            med_threshold=2,
+            high_threshold=2,
+            signer_address=trusted_key,
+            signer_type='ed25519PublicKey',
+            signer_weight=1,
+            source=None)
     b.sign()
     val = b.submit()
     print(val)
     return
-
 
 
 def withdrawal(text):
@@ -527,13 +530,13 @@ def withdrawal(text):
     r = text.split()
     if len(r) > 2:
         server = text.split()[1]
-        asset =  text.split()[2]
+        asset = text.split()[2]
     else:
         print("server asset e.g. tempo.eucom eurt, apay.io bch or naobtc.com btc")
         res = session.prompt(u'server asset> ')
         try:
             server, asset = res.split()[0], res.split()[1]
-        except:
+        except Exception:
             print('format error')
             return
     if server not in ['tempo.eu.com','apay.io','naobtc.com','flutterwave.com']:
@@ -568,6 +571,7 @@ def withdrawal(text):
     #print_formatted_text(HTML('\nSEND ' + asset + ' to <ansiyellow> ' + res['how'] + ' </ansiyellow>you have ' + str(int(res['eta']/60))
     #                     + ' min and ' + res['extra_info']))
     return
+
 
 def sys_exit():
     saveconf = session.prompt(u'save zip encrypted configuration (y/n)> ')
