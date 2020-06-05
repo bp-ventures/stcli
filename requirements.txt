@@ -1,5 +1,5 @@
-toml==0.9.4
-prompt_toolkit==2.0.3
-requests==2.13.0
-stellar_base==0.1.8.1
+prompt-toolkit==3.0.5
 PyQRCode==1.2.1
+requests==2.23.0
+stellar-sdk==2.5.2
+toml==0.10.1
