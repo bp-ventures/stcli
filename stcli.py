@@ -112,7 +112,8 @@ def fund():
 
 def transaction_builder():
     account = server().load_account(CONF['public_key'])
-    return TransactionBuilder(source_account=account, network_passphrase=network_passphrase())
+    return TransactionBuilder(source_account=account, network_passphrase=network_passphrase(),
+            base_fee=300)
 
 
 def set_account(settype, var1):
