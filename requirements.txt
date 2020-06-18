@@ -1,5 +1,5 @@
 prompt-toolkit==3.0.5
 PyQRCode==1.2.1
 requests==2.23.0
-stellar-sdk==2.6.0
+stellar-sdk==2.5.2
 toml==0.10.1
