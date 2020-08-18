@@ -24,7 +24,7 @@ from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
 from prompt_toolkit import PromptSession
 from prompt_toolkit.completion import WordCompleter
 from stellar_sdk.server import Server
-from stellar_sdk.exceptions import NotFoundError
+from stellar_sdk import exceptions as stellar_exceptions
 from stellar_sdk.keypair import Keypair
 from stellar_sdk.sep.mnemonic import StellarMnemonic
 from stellar_sdk.transaction_builder import TransactionBuilder
@@ -110,10 +110,21 @@ def fund():
     print(r.text)
 
 
+def fetch_base_fee():
+    try:
+        return server().fetch_base_fee()
+    except (stellar_exceptions.ConnectionError,
+            stellar_exceptions.NotFoundError,
+            stellar_exceptions.BadRequestError,
+            stellar_exceptions.BadResponseError,
+            stellar_exceptions.UnknownRequestError):
+        return 300
+
+
 def transaction_builder():
     account = server().load_account(CONF['public_key'])
     return TransactionBuilder(source_account=account, network_passphrase=network_passphrase(),
-            base_fee=300)
+            base_fee=fetch_base_fee())
 
 
 def set_account(settype, var1):
@@ -181,7 +192,7 @@ def create_wallet():
 def list_balances(check_asset=''):
     try:
         account = server().accounts().account_id(CONF['public_key']).call()
-    except NotFoundError:
+    except stellar_exceptions.NotFoundError:
         print_formatted_text(HTML('<ansiyellow>unfunded account... </ansiyellow> '
                              'you need to hit <ansiblue>f to fund for testnet or type key for public</ansiblue> '))
         return
