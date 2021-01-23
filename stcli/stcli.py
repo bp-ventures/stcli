@@ -605,8 +605,7 @@ def sys_exit():
         zipfile(passw)
     sys.exit()
 
-
-if __name__ == "__main__":
+def main():
     start_app()
     while True:
         text = session.prompt(u'> ', completer=compl, complete_while_typing=True,
@@ -635,3 +634,7 @@ if __name__ == "__main__":
         elif text[0] == '!': os.system(text[1:])
         else:
             print('You entered:', text)
+
+
+if __name__ == "__main__":
+    main()

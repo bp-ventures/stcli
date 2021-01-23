@@ -29,8 +29,8 @@ Command line - preferably Linux but MacOS or Windows 10 with Linux should work
 ```
 git clone https://github.com/antb123/stcli.git
 cd stcli
-sudo pip install -r requirements.txt
-./stcli.py
+sudo python3 -m pip install -e stcli/
+stcli --help
 press ? for help
 ```
 ![stcli help screen](https://user-images.githubusercontent.com/40919851/42498875-acfbe7ba-842d-11e8-97f5-169bc86a194e.png)

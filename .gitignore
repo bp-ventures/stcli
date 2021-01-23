@@ -19,5 +19,6 @@ venv.bak/
 #conf
 *.conf
 *.zip
+*.egg-info
 
 /.myhistory
