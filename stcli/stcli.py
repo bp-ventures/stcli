@@ -4,6 +4,7 @@ import json
 import sys
 import os
 import toml
+import platform
 from prompt_toolkit import prompt
 from prompt_toolkit.history import FileHistory
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
@@ -762,7 +763,12 @@ def main():
         elif text[0] == "!":
             os.system(text[1:])
         elif text == "cls":
-            os.system("cls")
+            if platform.system() == "Windows":
+                os.system("cls")
+            elif platform.system() == "Linux":
+                os.system("clear")
+            else:
+                print("unsupported platform")
         else:
             print("You entered:", text)
 
