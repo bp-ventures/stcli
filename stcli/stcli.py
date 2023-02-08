@@ -1,3 +1,4 @@
+#!/usr/bin/python3
 from __future__ import unicode_literals, print_function
 import requests
 import json
@@ -11,7 +12,7 @@ from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
 from prompt_toolkit import PromptSession
 from prompt_toolkit.completion import WordCompleter
 from stellar_sdk.server import Server
-from stellar_sdk import Asset, exceptions as stellar_exceptions
+from stellar_sdk import Asset, TransactionEnvelope, exceptions as stellar_exceptions
 from stellar_sdk.keypair import Keypair
 from stellar_sdk.sep.mnemonic import StellarMnemonic
 from stellar_sdk.transaction_builder import TransactionBuilder
@@ -45,6 +46,9 @@ compl = WordCompleter(
 )
 session = PromptSession(history=FileHistory(".myhistory"))
 VERSION = "0.1.5"
+stellar_toml = toml.loads(
+    requests.get("https://clpx.finance/.well-known/stellar.toml").text
+)
 
 
 def load_conf():
@@ -137,16 +141,16 @@ def fetch_base_fee():
         return 300
 
 
-def transaction_builder(asset_code):
+def transaction_builder():
     account = server().load_account(CONF["public_key"])
-    asset = Asset(asset_code, CONF["public_key"])
+    # asset = Asset(asset_code, CONF["public_key"])
     return (
         TransactionBuilder(
             source_account=account,
             network_passphrase=network_passphrase(),
             base_fee=fetch_base_fee(),
         )
-        .append_change_trust_op(asset=asset)
+        # .append_change_trust_op(asset=asset)
         .set_timeout(30)
     )
 
@@ -254,35 +258,32 @@ def trust_asset(text):
         print("no private key setup  - use set to set key or c to create wallet")
         return
     val = text.split(" ")
-    if len(val) != 2:
+    if len(val) != 3:
         if val[0][0] == "t":
-            print("invalid syntax please use trust <asset code>")
+            print("invalid syntax please use trust <issuer pubkey> <asset code>")
         else:
-            print("invalid syntax please use untrust <asset code>")
+            print("invalid syntax please use untrust <issuer pubkey> <asset code>")
         return
-    asset_code = val[1]
+    asset_issuer = val[1]
+    asset_code = val[2]
 
     builder = transaction_builder()
-    # Create an object to represent the new asset
-    asset = Asset(asset_code, CONF["public_key"])
-    try:
-        if val[0][0] == "t":
-            print("trusting asset_code=" + asset_code)
-            builder.append_change_trust_op(asset=asset)
-        else:
-            print(
-                "untrusting asset_code="
-                + asset_code
-                + ", please ensure your balance is 0 before this operation"
-            )
-            builder.append_change_trust_op(asset=asset, limit="0")
+    if val[0][0] == "t":
+        print("trusting asset_code=" + asset_code + " issuer=" + asset_issuer)
+        builder.append_change_trust_op(asset_code, asset_issuer)
+    else:
+        print(
+            "untrusting asset_code="
+            + asset_code
+            + " issuer="
+            + asset_issuer
+            + ", please ensure your balance is 0 before this operation"
+        )
+        builder.append_change_trust_op(asset_code, asset_issuer, limit="0")
 
-        envelope = builder.build()
-        envelope.sign(keypair())
-        server().submit_transaction(envelope)
-    except Exception as e:
-        print("error " + str(e))
-        return
+    envelope = builder.build()
+    envelope.sign(keypair())
+    server().submit_transaction(envelope)
 
 
 def print_help():
@@ -432,6 +433,7 @@ def send_asset(text):
         )
         return
     amount, asset, address = val[1], val[2].upper(), val[3]
+    print(amount)
     if "*" in address:
         res = fed(address.split("*")[1], address)
         sendto = res["account_id"]
@@ -542,85 +544,9 @@ def deposit(text):
     else:
         print("server asset e.g. apay.io bch or naobtc.com btc")
         res = session.prompt("server asset > ")
-        try:
-            server, asset = res.split()[0], res.split()[1]
-        except Exception:
-            print("format error")
-            return
-    if server not in ["tempo.eu.com", "apay.io", "naobtc.com"]:
-        print("error " + server + " unsupported")
-        return
-    print_formatted_text(
-        HTML(
-            "<ansiyellow>"
-            + asset
-            + "</ansiyellow> will be send to: <ansiyellow>"
-            + CONF["public_key"]
-            + "</ansiyellow> network: "
-            + CONF["network"]
-        )
-    )
-    # if not list_balances(check_asset=asset):
-    #     print("ERROR need to trust asset: type trust %s %s" % (server, asset))
-    #     return
-    FED = toml.loads(
-        requests.get("https://" + server + "/.well-known/stellar.toml").text
-    )
-    deposit_server = FED["DEPOSIT_SERVER"]
-    param = {}
-    param["asset_code"] = asset.upper()
-    param["account"] = CONF["public_key"]
-    if server == "apay.io":
-        deposit_server += "/deposit"
-        # url = '%s?asset_code=%s&account=%s' % (deposit_server, asset.upper(), CONF['public_key'])
-    elif server == "tempo.eu.com":
-        param["email"] = session.prompt(" email address > ")
-        param[
-            "method"
-        ] = "sepa"  # session.prompt(u'method default: sepa (sepa, swift, cash, unistream) > ', default='sepa')
-        print("deposit needs to happen using sepa")
-        # url = '%s?asset_code=%s&account=%s&email=%s' % (deposit_server, asset.upper(), CONF['public_key'], email)
-    else:
-        pass
-    #    url = '%s?asset_code=%s&account=%s' % (deposit_server, asset.upper(), CONF['public_key'])
-    # print('getting deposit info from ' + url)
-    print(param)
-    cont = session.prompt("Are you sure? (y/n) > ")
-    if cont.lower() != "y":
-        return
-    r = requests.get(deposit_server, params=param)
-    print(r.url)
-    res = r.json()
-    try:
-        if server in ["apay.io", "naobtc.com"]:
-            text = pyqrcode.create(res["how"])
-            print(text.terminal())
-        print(res)
-        min_amount = str(res.setdefault("min_amount", ""))
-        max_amount = str(res.setdefault("max_amount", ""))
-        print_formatted_text(
-            HTML(
-                "\nSEND "
-                + asset
-                + " to <ansiyellow> "
-                + res["how"]
-                + " </ansiyellow> you have "
-                + str(int(res["eta"] / 60))
-                + " min to make the payment. Amount min "
-                + asset
-                + " "
-                + min_amount
-                + " and max "
-                + max_amount
-                + " "
-                + res["extra_info"]
-            )
-        )
-        return
-    except Exception:
-        print("error")
-        print(res)
-        return
+        server, asset = res.split()[0], res.split()[1]
+        token = auth(server=server)
+        print(token)
 
 
 def set_multisig(trusted_key):
@@ -710,6 +636,50 @@ def sys_exit():
         passw = prompt("password for conf file: ", is_password=True)
         zipfile(passw)
     sys.exit()
+
+
+def fetch_stellar_toml(server):
+    return toml.loads(
+        requests.get("https://" + server + "/.well-known/stellar.toml").text
+    )
+
+
+def auth(server):
+    stellar_toml = fetch_stellar_toml(server)
+    auth_url = stellar_toml["WEB_AUTH_ENDPOINT"]
+
+    # get challenge transaction and sign it
+    client_signing_key = Keypair.from_secret(CONF["private_key"])
+    response = requests.get(f"{auth_url}?account={client_signing_key.public_key}")
+    content = json.loads(response.content)
+    envelope_xdr = content["transaction"]
+    envelope_object = TransactionEnvelope.from_xdr(
+        envelope_xdr, network_passphrase=Network.TESTNET_NETWORK_PASSPHRASE
+    )
+    envelope_object.sign(client_signing_key)
+    client_signed_envelope_xdr = envelope_object.to_xdr()
+    # submit the signed transaction to prove ownership of the account
+    response = requests.post(
+        auth_url,
+        json={"transaction": client_signed_envelope_xdr},
+    )
+    content = json.loads(response.content)
+    return content
+
+
+def trustline(asset):
+    private_key = CONF["private_key"]
+    url = Server(horizon_url=horizon_url())
+    keypair = Keypair.from_secret(private_key)
+    account = url.load_account(keypair.public_key)
+    builder = TransactionBuilder(
+        source_account=account, network_passphrase=Network.TESTNET_NETWORK_PASSPHRASE
+    )
+    builder.append_change_trust_op(asset=asset)
+    envelope = builder.build()
+    envelope.sign(keypair)
+    response = url.submit_transaction(envelope)
+    return response["successful"]
 
 
 def main():
