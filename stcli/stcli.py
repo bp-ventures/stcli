@@ -269,9 +269,11 @@ def trust_asset(text):
     asset_code = val[2]
 
     builder = transaction_builder()
+    asset_info = stellar_toml["CURRENCIES"][0]
+    _asset = Asset(asset_info["code"], asset_info["issuer"])
     if val[0][0] == "t":
         print("trusting asset_code=" + asset_code + " issuer=" + asset_issuer)
-        builder.append_change_trust_op(asset_code, asset_issuer)
+        builder.append_change_trust_op(_asset)
     else:
         print(
             "untrusting asset_code="
@@ -280,11 +282,15 @@ def trust_asset(text):
             + asset_issuer
             + ", please ensure your balance is 0 before this operation"
         )
-        builder.append_change_trust_op(asset_code, asset_issuer, limit="0")
-
-    envelope = builder.build()
-    envelope.sign(keypair())
-    server().submit_transaction(envelope)
+        builder.append_change_trust_op(_asset, limit="0")
+    try:
+        envelope = builder.build()
+        envelope.sign(keypair())
+        response = server().submit_transaction(envelope)
+        return response["successful"]
+    except Exception as e:
+        print(e)
+        return
 
 
 def print_help():
@@ -298,8 +304,6 @@ def print_help():
                 r [receive] - displays the public key and or federated address
                 s [send] amount asset address memo [text|id] e.g. s 1 XLM antb123*papayame.com
                 b [balances] - shows the balances of all assets
-                t [trust] - shows the trust lines and allows trust of new assets
-                u [untrust] - allows remove of trust lines were the balance is 0
                 c [create] - creates a new private and public keypair
                 k [key] - sets private key
                 f [fund] - fund a testnet address
@@ -472,28 +476,42 @@ def send_asset(text):
         return
     # retsan = send_sanity(sendto, memo_type, asset)
     # if not retsan: return
+    _asset = Asset(asset, asset_issuer)
     builder = transaction_builder()
     if asset != "XLM":
-        builder.append_payment_op(sendto, amount, asset, asset_issuer)
+        builder.append_payment_op(sendto, _asset, amount)
     else:
         builder.append_payment_op(sendto, amount)
     if memo != "" and memo_type == "text":
         builder.add_text_memo(memo)
     if memo != "" and memo_type == "id":
         builder.add_id_memo(memo)
-    envelope = builder.build()
-    if CONF["multisig"] != "":
-        print(
-            "You have 2of2 multisig - send this data to the other key to sign when you get it back type signsend data"
-        )
-        print(envelope.to_xdr())
-        return
-    envelope.sign(keypair())
-    print(server().submit_transaction(envelope))
+    try:
+        envelope = builder.build()
+        if CONF["multisig"] != "":
+            print(
+                "You have 2of2 multisig - send this data to the other key to sign when you get it back type signsend data"
+            )
+            print(envelope.to_xdr())
+            return
+        envelope.sign(keypair())
+        print(server().submit_transaction(envelope))
+    except Exception as e:
+        print("error: " + e)
 
 
 def signsend(text):
-    return
+    cont = session.prompt("You want to sign or send? (sign/send) > ")
+    data = text.split()[1]
+    builder = transaction_builder()
+    if cont.lower() == "sign":
+        print(" signing " + data)
+        builder.from_xdr(data, network_passphrase=network_passphrase())
+        # key = session.prompt(u'Enter who you sign for? %s > ' % CONF['multisig'])
+    envelope = builder.build()
+    envelope.sign(keypair())
+    print("send this to the other wallet and ask them to signsend it\n")
+    print(envelope.to_xdr())
 
 
 def start_app():
@@ -547,9 +565,9 @@ def deposit(text):
         res = session.prompt("server asset > ")
         server, asset = res.split()[0], res.split()[1]
         token = auth(server=server)
-        print("token is " + token)
+        # print("token is " + token)
         _trust = trustline()
-        print(_trust)
+        # print(_trust)
         data = {
             "asset_code": asset,
             "account": CONF["public_key"],
@@ -560,7 +578,7 @@ def deposit(text):
             + "/transactions/deposit/interactive"
         )
         response = requests.post(url, data=data, headers=headers).json()
-        webbrowser.open(url, new=0, autoraise=True)
+        webbrowser.open(response["url"], new=0, autoraise=True)
 
 
 def set_multisig(trusted_key):
@@ -596,14 +614,16 @@ def withdrawal(text):
             print("format error")
             return
     token = auth(server=server)
-    trustline()
+    _trust = trustline()
+    # print("Trustline: " + _trust)
     data = {
         "asset_code": asset,
     }
     headers = {"Authorization": "Bearer " + token}
     url = stellar_toml["TRANSFER_SERVER_SEP0024"] + "/transactions/withdraw/interactive"
     response = requests.post(url, data=data, headers=headers).json()
-    webbrowser.open(url, new=0, autoraise=True)
+    print(response)
+    webbrowser.open(response["url"], new=0, autoraise=True)
 
 
 def server():
@@ -649,6 +669,7 @@ def auth(server):
 
 
 def trustline():
+    print("Adding trustline to the asset issuer...")
     private_key = CONF["private_key"]
     url = Server(horizon_url=horizon_url())
     asset_info = stellar_toml["CURRENCIES"][0]
@@ -658,7 +679,7 @@ def trustline():
         source_account=account, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE
     )
     asset = Asset(asset_info["code"], asset_info["issuer"])
-    builder.append_change_trust_op(asset=asset)
+    builder.append_change_trust_op(asset=asset).set_timeout(30)
     envelope = builder.build()
     envelope.sign(keypair)
     response = url.submit_transaction(envelope)
@@ -707,10 +728,10 @@ def main():
             deposit(text)
         elif text[0] == "w":
             withdrawal(text)
-        elif text[0] == "t":
-            trust_asset(text)
-        elif text[0] == "u":
-            trust_asset(text)
+        # elif text[0] == "t":
+        #     trust_asset(text)
+        # elif text[0] == "u":
+        #     trust_asset(text)
         elif text[0] == "s":
             send_asset(text)
         elif text[0] == "!":
