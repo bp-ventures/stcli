@@ -1,5 +1,6 @@
 #!/usr/bin/python3
 from __future__ import unicode_literals, print_function
+import webbrowser
 import requests
 import json
 import sys
@@ -546,7 +547,20 @@ def deposit(text):
         res = session.prompt("server asset > ")
         server, asset = res.split()[0], res.split()[1]
         token = auth(server=server)
-        print(token)
+        print("token is " + token)
+        _trust = trustline()
+        print(_trust)
+        data = {
+            "asset_code": asset,
+            "account": CONF["public_key"],
+        }
+        headers = {"Authorization": "Bearer " + token}
+        url = (
+            stellar_toml["TRANSFER_SERVER_SEP0024"]
+            + "/transactions/deposit/interactive"
+        )
+        response = requests.post(url, data=data, headers=headers).json()
+        webbrowser.open(url, new=0, autoraise=True)
 
 
 def set_multisig(trusted_key):
@@ -581,49 +595,15 @@ def withdrawal(text):
         except Exception:
             print("format error")
             return
-    if server not in ["tempo.eu.com", "apay.io", "naobtc.com", "flutterwave.com"]:
-        print("error " + server + " unsupported")
-        return
-    print_formatted_text(
-        HTML(
-            "<ansiyellow>"
-            + asset
-            + "</ansiyellow> withdrawal from <ansiyellow>"
-            + server
-            + "</ansiyellow> network: "
-            + CONF["network"]
-        )
-    )
-    FED = toml.loads(
-        requests.get("https://" + server + "/.well-known/stellar.toml").text
-    )
-    # print(FED)
-    param = {}
-    param["type"] = "forward"
-    if server == "tempo.eu.com":
-        print_formatted_text(HTML("withdrawal is <ansiyellow>sepa</ansiyellow>"))
-        param["email"] = session.prompt("email address > ")
-        param["iban"] = session.prompt("iban > ")
-        param["swift"] = session.prompt("swift/bic > ")
-        param["receiver_name"] = session.prompt("receiver name > ")
-        param["forward_type"] = "bank_account"
-        # url = '%s?type=forward&forward_type=bank_account&iban=%s&swift=%s&email=%s' % (FED['FEDERATION_SERVER'],iban,swift,email)
-        # url = '%s?type=forward&iban=%s&swift=%s&email=%s' % (FED['FEDERATION_SERVER'],iban,swift,email)
-    else:
-        param["account"] = session.prompt("crypto destination account > ")
-        # url = FED['FEDERATION_SERVER'] +'?type=forward&account=%s' % account
-    # print('getting federation with ' + url)
-    print(param)
-    cont = session.prompt("Are you sure? (y/n) > ", default="n")
-    if cont.lower() != "y":
-        return
-    r = requests.get(FED["FEDERATION_SERVER"], params=param)
-    print(r.url)
-    res = r.json()
-    print(res)
-    # print_formatted_text(HTML('\nSEND ' + asset + ' to <ansiyellow> ' + res['how'] + ' </ansiyellow>you have ' + str(int(res['eta']/60))
-    #                     + ' min and ' + res['extra_info']))
-    return
+    token = auth(server=server)
+    trustline()
+    data = {
+        "asset_code": asset,
+    }
+    headers = {"Authorization": "Bearer " + token}
+    url = stellar_toml["TRANSFER_SERVER_SEP0024"] + "/transactions/withdraw/interactive"
+    response = requests.post(url, data=data, headers=headers).json()
+    webbrowser.open(url, new=0, autoraise=True)
 
 
 def server():
@@ -654,7 +634,7 @@ def auth(server):
     content = json.loads(response.content)
     envelope_xdr = content["transaction"]
     envelope_object = TransactionEnvelope.from_xdr(
-        envelope_xdr, network_passphrase=Network.TESTNET_NETWORK_PASSPHRASE
+        envelope_xdr, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE
     )
     envelope_object.sign(client_signing_key)
     client_signed_envelope_xdr = envelope_object.to_xdr()
@@ -664,17 +644,20 @@ def auth(server):
         json={"transaction": client_signed_envelope_xdr},
     )
     content = json.loads(response.content)
-    return content
+    token = content["token"]
+    return token
 
 
-def trustline(asset):
+def trustline():
     private_key = CONF["private_key"]
     url = Server(horizon_url=horizon_url())
+    asset_info = stellar_toml["CURRENCIES"][0]
     keypair = Keypair.from_secret(private_key)
     account = url.load_account(keypair.public_key)
     builder = TransactionBuilder(
-        source_account=account, network_passphrase=Network.TESTNET_NETWORK_PASSPHRASE
+        source_account=account, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE
     )
+    asset = Asset(asset_info["code"], asset_info["issuer"])
     builder.append_change_trust_op(asset=asset)
     envelope = builder.build()
     envelope.sign(keypair)
