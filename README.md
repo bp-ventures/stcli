@@ -30,7 +30,7 @@ Command line - preferably Linux but MacOS or Windows 10 with Linux should work. 
 ### Installing
 
 ```
-git clone https://github.com/antb123/stcli.git
+git clone https://github.com/antb321/stcli.git
 cd stcli
 sudo python3 -m pip install -e stcli/
 stcli --help
