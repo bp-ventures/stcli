@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 import sys
 
 if sys.version_info < (3, 8, 0):
@@ -22,12 +20,12 @@ with io.open(os.path.join(CURDIR, "README.md"), "r", encoding="utf-8") as f:
     README = f.read()
 
 
-with io.open(os.path.join(CURDIR, 'requirements.txt'), "r", encoding="utf-8") as f:
+with io.open(os.path.join(CURDIR, "requirements.txt"), "r", encoding="utf-8") as f:
     required = f.read().splitlines()
 
 setup(
     name="stcli",
-    version='0.14',
+    version="1.0.0",
     author="antb123 on stellar-public",
     author_email="",
     description="stcli - a repl command line crypto wallet for stellar that is simple and all in one file",
@@ -36,8 +34,7 @@ setup(
     url="http://github.com/antb123/stcli",
     packages=find_packages(exclude=EXCLUDE_FROM_PACKAGES),
     include_package_data=True,
-    keywords=[
-    ],
+    keywords=[],
     scripts=[],
     entry_points={"console_scripts": ["stcli = stcli.stcli:main"]},
     extras_require={},
@@ -46,7 +43,7 @@ setup(
     install_requires=required,
     classifiers=[
         "Programming Language :: Python",
-        "Programming Language :: Python :: 3.8"
+        "Programming Language :: Python :: 3.8",
     ],
-    license='MIT'
+    license="MIT",
 )
