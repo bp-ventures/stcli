@@ -55,21 +55,22 @@ VERSION = "0.1.5"
 def gettoml(asset):
     url = horizon_url()
     _url = url + "assets?asset_code=" + asset
-    print(_url)
     reponse = requests.get(_url)
     res = reponse.json()
     # print(res)
     try:
-        print(res["_embedded"]["records"][0]["_links"]["toml"]["href"])
-        toml = res["_embedded"]["records"][0]["_links"]["toml"]
+        # print(res["_embedded"]["records"][0]["_links"]["toml"]["href"])
+        tomlurl = res["_embedded"]["records"][0]["_links"]["toml"]["href"]
+        print("toml: " + tomlurl)
         if toml is None:
-            print("No toml found")
+            # print("No toml found")
             return
-        _toml = toml.loads(requests.get(toml))
-        print(_toml)
+        _toml = toml.loads(requests.get(tomlurl).text)
+        # print(_toml)
         return _toml
     except Exception as e:
         print(e)
+        return None
 
 
 def load_conf():
@@ -589,19 +590,26 @@ def deposit(text):
         res = session.prompt("server asset > ")
         server, asset = res.split()[0], res.split()[1]
         token = auth(asset=asset)
-        # print("token is " + token)
-        _trust = trustline()
-        # print(_trust)
-        data = {
-            "asset_code": asset,
-            "account": CONF["public_key"],
-        }
-        headers = {"Authorization": "Bearer " + token}
-        toml_link = gettoml(asset)
-        print(toml_link)
-        url = toml_link["TRANSFER_SERVER_SEP0024"] + "/transactions/deposit/interactive"
-        response = requests.post(url, data=data, headers=headers).json()
-        webbrowser.open(response["url"], new=0, autoraise=True)
+        if token is not None:
+            # print("token is " + token)
+            _trust = trustline(asset=asset)
+            # print(_trust)
+            data = {
+                "asset_code": asset,
+                "account": CONF["public_key"],
+            }
+            headers = {"Authorization": "Bearer " + token}
+            toml_link = gettoml(asset)
+            print(toml_link)
+            url = (
+                toml_link["TRANSFER_SERVER_SEP0024"]
+                + "/transactions/deposit/interactive"
+            )
+            response = requests.post(url, data=data, headers=headers).json()
+            webbrowser.open(response["url"], new=0, autoraise=True)
+        else:
+            print("Auth server not found for " + asset)
+            return
 
 
 def set_multisig(trusted_key):
@@ -636,18 +644,27 @@ def withdrawal(text):
         except Exception:
             print("format error")
             return
-    token = auth(asset=asset)
-    _trust = trustline()
-    # print("Trustline: " + _trust)
-    data = {
-        "asset_code": asset,
-    }
-    headers = {"Authorization": "Bearer " + token}
-    toml_link = gettoml(asset, CONF["public_key"])
-    url = toml_link["TRANSFER_SERVER_SEP0024"] + "/transactions/withdraw/interactive"
-    response = requests.post(url, data=data, headers=headers).json()
-    print(response)
-    webbrowser.open(response["url"], new=0, autoraise=True)
+    if asset is not None:
+        token = auth(asset=asset)
+        if token is not None:
+            _trust = trustline(asset=asset)
+            # print("Trustline: " + _trust)
+            data = {
+                "asset_code": asset,
+            }
+            headers = {"Authorization": "Bearer " + token}
+            toml_link = gettoml(asset, CONF["public_key"])
+            url = (
+                toml_link["TRANSFER_SERVER_SEP0024"]
+                + "/transactions/withdraw/interactive"
+            )
+            response = requests.post(url, data=data, headers=headers).json()
+            print(response)
+            webbrowser.open(response["url"], new=0, autoraise=True)
+        else:
+            print("Auth server not found for " + asset)
+    else:
+        print("enter valid asset")
 
 
 def server():
@@ -670,31 +687,42 @@ def fetch_stellar_toml(server):
 
 def auth(asset):
     # stellar_toml = fetch_stellar_toml(server)
-    toml_link = gettoml(asset)
-    print(toml_link)
-    auth_url = toml_link["WEB_AUTH_ENDPOINT"]
+    try:
+        toml_link = gettoml(asset=asset)
+        if toml_link is not None:
+            print(asset)
+            print(toml_link)
+            auth_url = toml_link["WEB_AUTH_ENDPOINT"]
 
-    # get challenge transaction and sign it
-    client_signing_key = Keypair.from_secret(CONF["private_key"])
-    response = requests.get(f"{auth_url}?account={client_signing_key.public_key}")
-    content = json.loads(response.content)
-    envelope_xdr = content["transaction"]
-    envelope_object = TransactionEnvelope.from_xdr(
-        envelope_xdr, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE
-    )
-    envelope_object.sign(client_signing_key)
-    client_signed_envelope_xdr = envelope_object.to_xdr()
-    # submit the signed transaction to prove ownership of the account
-    response = requests.post(
-        auth_url,
-        json={"transaction": client_signed_envelope_xdr},
-    )
-    content = json.loads(response.content)
-    token = content["token"]
-    return token
+            # get challenge transaction and sign it
+            client_signing_key = Keypair.from_secret(CONF["private_key"])
+            response = requests.get(
+                f"{auth_url}?account={client_signing_key.public_key}"
+            )
+            content = json.loads(response.content)
+            envelope_xdr = content["transaction"]
+            envelope_object = TransactionEnvelope.from_xdr(
+                envelope_xdr, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE
+            )
+            envelope_object.sign(client_signing_key)
+            client_signed_envelope_xdr = envelope_object.to_xdr()
+            # submit the signed transaction to prove ownership of the account
+            response = requests.post(
+                auth_url,
+                json={"transaction": client_signed_envelope_xdr},
+            )
+            content = json.loads(response.content)
+            token = content["token"]
+            return token
+        else:
+            # print("no toml link found")
+            return None
+    except Exception as e:
+        print(e)
+        return None
 
 
-def trustline():
+def trustline(asset):
     print("Adding trustline to the asset issuer...")
     private_key = CONF["private_key"]
     url = Server(horizon_url=horizon_url())
