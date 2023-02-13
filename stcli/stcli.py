@@ -47,9 +47,29 @@ compl = WordCompleter(
 )
 session = PromptSession(history=FileHistory(".myhistory"))
 VERSION = "0.1.5"
-stellar_toml = toml.loads(
-    requests.get("https://clpx.finance/.well-known/stellar.toml").text
-)
+# stellar_toml = toml.loads(
+#     requests.get("https://kbtrading.org/.well-known/stellar.toml").text
+# )
+
+
+def gettoml(asset):
+    url = horizon_url()
+    _url = url + "assets?asset_code=" + asset
+    print(_url)
+    reponse = requests.get(_url)
+    res = reponse.json()
+    # print(res)
+    try:
+        print(res["_embedded"]["records"][0]["_links"]["toml"]["href"])
+        toml = res["_embedded"]["records"][0]["_links"]["toml"]
+        if toml is None:
+            print("No toml found")
+            return
+        _toml = toml.loads(requests.get(toml))
+        print(_toml)
+        return _toml
+    except Exception as e:
+        print(e)
 
 
 def load_conf():
@@ -269,7 +289,8 @@ def trust_asset(text):
     asset_code = val[2]
 
     builder = transaction_builder()
-    asset_info = stellar_toml["CURRENCIES"][0]
+    toml_link = gettoml(asset_code, asset_issuer)
+    asset_info = toml_link["CURRENCIES"][0]
     _asset = Asset(asset_info["code"], asset_info["issuer"])
     if val[0][0] == "t":
         print("trusting asset_code=" + asset_code + " issuer=" + asset_issuer)
@@ -471,7 +492,10 @@ def send_asset(text):
     text = session.prompt("> ", default="y")
     if text != "y":
         return
-    ret, asset_issuer = get_balance_issuer(amount, asset)
+    try:
+        ret, asset_issuer = get_balance_issuer(amount, asset)
+    except Exception as e:
+        return e
     if ret:
         return
     # retsan = send_sanity(sendto, memo_type, asset)
@@ -564,7 +588,7 @@ def deposit(text):
         print("server asset e.g. apay.io bch or naobtc.com btc")
         res = session.prompt("server asset > ")
         server, asset = res.split()[0], res.split()[1]
-        token = auth(server=server)
+        token = auth(asset=asset)
         # print("token is " + token)
         _trust = trustline()
         # print(_trust)
@@ -573,10 +597,9 @@ def deposit(text):
             "account": CONF["public_key"],
         }
         headers = {"Authorization": "Bearer " + token}
-        url = (
-            stellar_toml["TRANSFER_SERVER_SEP0024"]
-            + "/transactions/deposit/interactive"
-        )
+        toml_link = gettoml(asset)
+        print(toml_link)
+        url = toml_link["TRANSFER_SERVER_SEP0024"] + "/transactions/deposit/interactive"
         response = requests.post(url, data=data, headers=headers).json()
         webbrowser.open(response["url"], new=0, autoraise=True)
 
@@ -613,14 +636,15 @@ def withdrawal(text):
         except Exception:
             print("format error")
             return
-    token = auth(server=server)
+    token = auth(asset=asset)
     _trust = trustline()
     # print("Trustline: " + _trust)
     data = {
         "asset_code": asset,
     }
     headers = {"Authorization": "Bearer " + token}
-    url = stellar_toml["TRANSFER_SERVER_SEP0024"] + "/transactions/withdraw/interactive"
+    toml_link = gettoml(asset, CONF["public_key"])
+    url = toml_link["TRANSFER_SERVER_SEP0024"] + "/transactions/withdraw/interactive"
     response = requests.post(url, data=data, headers=headers).json()
     print(response)
     webbrowser.open(response["url"], new=0, autoraise=True)
@@ -644,9 +668,11 @@ def fetch_stellar_toml(server):
     )
 
 
-def auth(server):
-    stellar_toml = fetch_stellar_toml(server)
-    auth_url = stellar_toml["WEB_AUTH_ENDPOINT"]
+def auth(asset):
+    # stellar_toml = fetch_stellar_toml(server)
+    toml_link = gettoml(asset)
+    print(toml_link)
+    auth_url = toml_link["WEB_AUTH_ENDPOINT"]
 
     # get challenge transaction and sign it
     client_signing_key = Keypair.from_secret(CONF["private_key"])
@@ -672,7 +698,8 @@ def trustline():
     print("Adding trustline to the asset issuer...")
     private_key = CONF["private_key"]
     url = Server(horizon_url=horizon_url())
-    asset_info = stellar_toml["CURRENCIES"][0]
+    toml_link = gettoml(asset)
+    asset_info = toml_link["CURRENCIES"][0]
     keypair = Keypair.from_secret(private_key)
     account = url.load_account(keypair.public_key)
     builder = TransactionBuilder(
