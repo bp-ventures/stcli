@@ -315,17 +315,18 @@ def print_help():
             DESCRIPTION
                                                      COMMAND OPTIONS
                 r [receive] - displays the public key and or federated address
-                s [send] amount asset address memo [text|id] e.g. s 1 XLM antb123*papayame.com
+                s [send] amount asset address memo [text|id] e.g. s 1 XLM <address>
                 b [balances] - shows the balances of all assets
                 c [create] - creates a new private and public keypair
                 k [key] - sets private key
                 f [fund] - fund a testnet address
                 h [history] - history of transactions
                 v [version] - displays version
-                pps [payment path send] - allows you to send path payments (in beta)
-                ppr [payment path recieve] - allows you to recieve with path payments (in beta)
+                pps [payment path send] - allows you to send path payments e.g. pps 1 XLM <address>  (in beta) 
+                ppr [payment path recieve] - allows you to recieve with path payments e.g ppr 1 XLM <address> (in beta)
                 deposit - brings up deposit menu  e.g. d tempo.eu.com eurt
                 withdrawal - brings up withdrawal menu w tempo.eu.com eurt
+                direct transfer - allows you to send direct transfers to a bank account e.g. dt kbtrading.org eurt 10  (in beta)
                 conf - prints configuration
                 cls [clear] - clears the screen
                 q [quit] - quit app
@@ -829,6 +830,65 @@ def trustline(asset, asset_issuer):
     return response["successful"]
 
 
+def direct_transfer(text):
+    print_formatted_text(HTML("<ansiblue>\n### DIRECT TRANSFER ###</ansiblue>\n"))
+    print("direct transfer allows you to send assets to another account")
+    print("direct transfer e.g. kbtrading.org eurt 10")
+    res = session.prompt("direct transfer> ")
+    r = res.split()
+    if len(r) > 2:
+        try:
+            asset, server, amount = res.split()[0], res.split()[1], res.split()[2]
+            remitter_email = session.prompt("remitter email> ")
+            remitter_first_name = session.prompt("remitter_first_name> ")
+            remitter_last_name = session.prompt("remitter_last_name> ")
+            remitter_phone_number = session.prompt("remitter_phone_number> ")
+            beneficiary_email = session.prompt("beneficiary_email> ")
+            beneficiary_first_name = session.prompt("beneficiary_first_name> ")
+            beneficiary_last_name = session.prompt("beneficiary_last_name> ")
+            beneficiary_bank_iban = session.prompt("beneficiary_bank_iban> ")
+            beneficiary_bank_bic = session.prompt("beneficiary_bank_bic> ")
+            beneficiary_phone_number = session.prompt("beneficiary_phone_number> ")
+
+            if asset is not None:
+                token = auth(asset=asset, asset_issuer=server)
+                if token is not None:
+                    payload = {
+                        "amount": amount,
+                        "asset_code": asset,
+                        "fields": {
+                            "transaction": {
+                                "remitter_email": remitter_email,
+                                "remitter_first_name": remitter_first_name,
+                                "remitter_last_name": remitter_last_name,
+                                "remitter_phone_number": remitter_phone_number,
+                                "beneficiary_email": beneficiary_email,
+                                "beneficiary_first_name": beneficiary_first_name,
+                                "beneficiary_last_name": beneficiary_last_name,
+                                "beneficiary_bank_iban": beneficiary_bank_iban,
+                                "beneficiary_bank_bic": beneficiary_bank_bic,
+                                "beneficiary_phone_number": beneficiary_phone_number,
+                            }
+                        },
+                    }
+                    headers = {"Authorization": "Bearer " + token}
+                    toml_link = getStellarToml(asset=asset, asset_issuer=server)
+                    url = toml_link["TRANSFER_SERVER_SEP0031"] + "/transactions"
+                    response = requests.post(url, json=payload, headers=headers).json()
+                    print(response)
+                    # webbrowser.open(response["url"], new=0, autoraise=True)
+                else:
+                    print("Auth server not found for " + asset)
+            else:
+                print("enter valid asset")
+        except Exception:
+            print("format error")
+            return
+    else:
+        print("format error")
+        return
+
+
 def main():
     start_app()
     while True:
@@ -867,6 +927,8 @@ def main():
             set_var(text)
         elif text == "version" or text == "v":
             print("VERSION: " + VERSION)
+        elif text[0] == "d" and text[1] == "t":
+            direct_transfer(text)
         elif text[0] == "d":
             deposit(text)
         elif text[0] == "w":
@@ -879,6 +941,7 @@ def main():
             path_payment_send(text)
         elif text[0] == "p" and text[1] == "p" and text[2] == "r":
             path_payment_receive(text)
+
         elif text == "cls":
             if platform.system() == "Windows":
                 os.system("cls")
