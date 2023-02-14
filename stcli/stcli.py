@@ -47,27 +47,23 @@ compl = WordCompleter(
 )
 session = PromptSession(history=FileHistory(".myhistory"))
 VERSION = "0.1.5"
-# stellar_toml = toml.loads(
-#     requests.get("https://kbtrading.org/.well-known/stellar.toml").text
-# )
 
 
-def gettoml(asset):
+def getStellarToml(asset, asset_issuer):
     url = horizon_url()
     _url = url + "assets?asset_code=" + asset
     reponse = requests.get(_url)
     res = reponse.json()
-    # print(res)
     try:
-        # print(res["_embedded"]["records"][0]["_links"]["toml"]["href"])
-        tomlurl = res["_embedded"]["records"][0]["_links"]["toml"]["href"]
-        print("toml: " + tomlurl)
-        if toml is None:
-            # print("No toml found")
-            return
-        _toml = toml.loads(requests.get(tomlurl).text)
-        # print(_toml)
-        return _toml
+        records = res["_embedded"]["records"]
+        for record in records:
+            if asset_issuer in record["_links"]["toml"]["href"]:
+                tomlurl = record["_links"]["toml"]["href"]
+                if toml is None:
+                    return
+                _toml = toml.loads(requests.get(tomlurl).text)
+                return _toml
+        return None
     except Exception as e:
         print(e)
         return None
@@ -165,16 +161,11 @@ def fetch_base_fee():
 
 def transaction_builder():
     account = server().load_account(CONF["public_key"])
-    # asset = Asset(asset_code, CONF["public_key"])
-    return (
-        TransactionBuilder(
-            source_account=account,
-            network_passphrase=network_passphrase(),
-            base_fee=fetch_base_fee(),
-        )
-        # .append_change_trust_op(asset=asset)
-        .set_timeout(30)
-    )
+    return TransactionBuilder(
+        source_account=account,
+        network_passphrase=network_passphrase(),
+        base_fee=fetch_base_fee(),
+    ).set_timeout(30)
 
 
 def set_account(settype, var1):
@@ -290,7 +281,7 @@ def trust_asset(text):
     asset_code = val[2]
 
     builder = transaction_builder()
-    toml_link = gettoml(asset_code, asset_issuer)
+    toml_link = getStellarToml(asset_code, asset_issuer)
     asset_info = toml_link["CURRENCIES"][0]
     _asset = Asset(asset_info["code"], asset_info["issuer"])
     if val[0][0] == "t":
@@ -589,18 +580,15 @@ def deposit(text):
         print("server asset e.g. apay.io bch or naobtc.com btc")
         res = session.prompt("server asset > ")
         server, asset = res.split()[0], res.split()[1]
-        token = auth(asset=asset)
+        token = auth(asset=asset, asset_issuer=server)
         if token is not None:
-            # print("token is " + token)
-            _trust = trustline(asset=asset)
-            # print(_trust)
             data = {
                 "asset_code": asset,
                 "account": CONF["public_key"],
             }
             headers = {"Authorization": "Bearer " + token}
-            toml_link = gettoml(asset)
-            print(toml_link)
+            toml_link = getStellarToml(asset, asset_issuer=server)
+
             url = (
                 toml_link["TRANSFER_SERVER_SEP0024"]
                 + "/transactions/deposit/interactive"
@@ -645,15 +633,13 @@ def withdrawal(text):
             print("format error")
             return
     if asset is not None:
-        token = auth(asset=asset)
+        token = auth(asset=asset, asset_issuer=server)
         if token is not None:
-            _trust = trustline(asset=asset)
-            # print("Trustline: " + _trust)
             data = {
                 "asset_code": asset,
             }
             headers = {"Authorization": "Bearer " + token}
-            toml_link = gettoml(asset, CONF["public_key"])
+            toml_link = getStellarToml(asset=asset, asset_issuer=server)
             url = (
                 toml_link["TRANSFER_SERVER_SEP0024"]
                 + "/transactions/withdraw/interactive"
@@ -685,13 +671,10 @@ def fetch_stellar_toml(server):
     )
 
 
-def auth(asset):
-    # stellar_toml = fetch_stellar_toml(server)
+def auth(asset, asset_issuer):
     try:
-        toml_link = gettoml(asset=asset)
+        toml_link = getStellarToml(asset=asset, asset_issuer=asset_issuer)
         if toml_link is not None:
-            print(asset)
-            print(toml_link)
             auth_url = toml_link["WEB_AUTH_ENDPOINT"]
 
             # get challenge transaction and sign it
@@ -715,18 +698,17 @@ def auth(asset):
             token = content["token"]
             return token
         else:
-            # print("no toml link found")
             return None
     except Exception as e:
         print(e)
         return None
 
 
-def trustline(asset):
+def trustline(asset, asset_issuer):
     print("Adding trustline to the asset issuer...")
     private_key = CONF["private_key"]
     url = Server(horizon_url=horizon_url())
-    toml_link = gettoml(asset)
+    toml_link = getStellarToml(asset=asset, asset_issuer=asset_issuer)
     asset_info = toml_link["CURRENCIES"][0]
     keypair = Keypair.from_secret(private_key)
     account = url.load_account(keypair.public_key)
@@ -783,10 +765,6 @@ def main():
             deposit(text)
         elif text[0] == "w":
             withdrawal(text)
-        # elif text[0] == "t":
-        #     trust_asset(text)
-        # elif text[0] == "u":
-        #     trust_asset(text)
         elif text[0] == "s":
             send_asset(text)
         elif text[0] == "!":
