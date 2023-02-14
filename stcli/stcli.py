@@ -322,12 +322,13 @@ def print_help():
                 f [fund] - fund a testnet address
                 h [history] - history of transactions
                 v [version] - displays version
-                pp [paymentpath] - allows you to play with path payments (in beta)
-                cls [clear] - clears the screen
-                q [quit] - quit app
+                pps [payment path send] - allows you to send path payments (in beta)
+                ppr [payment path recieve] - allows you to recieve with path payments (in beta)
                 deposit - brings up deposit menu  e.g. d tempo.eu.com eurt
                 withdrawal - brings up withdrawal menu w tempo.eu.com eurt
                 conf - prints configuration
+                cls [clear] - clears the screen
+                q [quit] - quit app
                 set key=var .. e.g. set network=PUBLIC (do not use for private key - use k)
                 set inflation=tempo.eu.como not use for private key - use k)
                 set multisig=GPUBKEY sets a public key for multisig)
@@ -562,7 +563,118 @@ def start_app():
 
 
 def path_payment(text):
-    print("..checking path payment options not yet implemented")
+    path_payment_send(text)
+    # print("..checking path payment options not yet implemented")
+
+
+def path_payment_send(text):
+    if CONF["private_key"] == "":
+        print("no private key setup  - pls type set to set key or c to create wallet")
+        return
+    val = text.split()
+    memo_type = "text"
+    if len(val) < 3:
+        print(
+            "invalid syntax please use pp <amount> <source asset> <destination address> e.g.  pps 10 EURT antb123*papayame.com"
+        )
+        return
+    amount, s_asset, address = val[1], val[2].upper(), val[3]
+    ret, asset_issuer = get_balance_issuer(amount, s_asset)
+    if ret:
+        return
+    if len(s_asset) < 5:
+        sstype = "credit_alphanum4"
+    else:
+        sstype = "credit_alphanum12"
+    _url = (
+        horizon_url()
+        + "paths/strict-send?destination_account="
+        + address
+        + "&source_asset_code="
+        + s_asset
+        + "&source_asset_type="
+        + sstype
+        + "&source_amount="
+        + amount
+        + "&source_asset_issuer="
+        + asset_issuer
+    )
+    response = requests.get(_url)
+    if response.status_code == 200:
+        data = response.json()
+        if len(data["_embedded"]["records"]) == 0:
+            print("no path found")
+            return
+        for record in data["_embedded"]["records"]:
+            print("path found")
+            print(record)
+            # print("sending")
+            # builder = transaction_builder()
+            # builder.append_payment_op(
+            #     record["destination_amount"],
+            #     record["destination_asset_code"],
+            #     record["destination_asset_issuer"],
+            #     address,
+            #     record["source_amount"],
+            #     record["source_asset_code"],
+            #     record["source_asset_issuer"],
+            # )
+            # try:
+            #     envelope = builder.build()
+            #     if CONF["multisig"] != "":
+            #         print(
+            #             "You have 2of2 multisig - send this data to the other key to sign when you get it back type signsend data"
+            #         )
+            #         print(envelope.to_xdr())
+            #         return
+            #     envelope.sign(keypair())
+            # #  print(server().submit_transaction(envelope))
+            # except Exception as e:
+            #     print("error: " + e)
+
+
+def path_payment_receive(text):
+    if CONF["private_key"] == "":
+        print("no private key setup  - pls type set to set key or c to create wallet")
+        return
+    val = text.split()
+    memo_type = "text"
+    if len(val) < 3:
+        print(
+            "invalid syntax please use pp <amount> <destination asset> <source address> e.g.  s 10 EURT BTCLN antb123*papayame.com"
+        )
+        return
+    amount, d_asset, address = val[1], val[2].upper(), val[3]
+    ret, asset_issuer = get_balance_issuer(amount, d_asset)
+    if ret:
+        return
+    # _asset = Asset(s_asset, asset_issuer)
+    if len(d_asset) < 5:
+        dstype = "credit_alphanum4"
+    else:
+        dstype = "credit_alphanum12"
+    _url = (
+        horizon_url()
+        + "paths/strict-receive?source_account="
+        + address
+        + "&destination_asset_code="
+        + d_asset
+        + "&destination_asset_type="
+        + dstype
+        + "&destination_amount="
+        + amount
+        + "&destination_asset_issuer="
+        + asset_issuer
+    )
+    response = requests.get(_url)
+    if response.status_code == 200:
+        data = response.json()
+        if len(data["_embedded"]["records"]) == 0:
+            print("no path found")
+            return
+        for record in data["_embedded"]["records"]:
+            print("path found")
+            print(record)
 
 
 def deposit(text):
@@ -665,12 +777,6 @@ def sys_exit():
     sys.exit()
 
 
-def fetch_stellar_toml(server):
-    return toml.loads(
-        requests.get("https://" + server + "/.well-known/stellar.toml").text
-    )
-
-
 def auth(asset, asset_issuer):
     try:
         toml_link = getStellarToml(asset=asset, asset_issuer=asset_issuer)
@@ -769,6 +875,10 @@ def main():
             send_asset(text)
         elif text[0] == "!":
             os.system(text[1:])
+        elif text[0] == "p" and text[1] == "p" and text[2] == "s":
+            path_payment_send(text)
+        elif text[0] == "p" and text[1] == "p" and text[2] == "r":
+            path_payment_receive(text)
         elif text == "cls":
             if platform.system() == "Windows":
                 os.system("cls")
