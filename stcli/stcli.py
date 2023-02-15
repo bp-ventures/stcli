@@ -1,5 +1,6 @@
 #!/usr/bin/python3
 from __future__ import unicode_literals, print_function
+import time
 import webbrowser
 import requests
 import json
@@ -18,7 +19,8 @@ from stellar_sdk.keypair import Keypair
 from stellar_sdk.sep.mnemonic import StellarMnemonic
 from stellar_sdk.transaction_builder import TransactionBuilder
 from stellar_sdk.network import Network
-from stellar_sdk.xdr import SignerKey
+
+# from stellar_sdk.xdr import SignerKey
 from prompt_toolkit import print_formatted_text, HTML
 
 # optional
@@ -50,23 +52,28 @@ VERSION = "0.1.5"
 
 
 def get_stellar_toml(asset, asset_issuer):
-    url = horizon_url()
-    _url = url + "assets?asset_code=" + asset
-    reponse = requests.get(_url)
-    res = reponse.json()
-    try:
-        records = res["_embedded"]["records"]
-        for record in records:
-            if asset_issuer in record["_links"]["toml"]["href"]:
-                tomlurl = record["_links"]["toml"]["href"]
-                if toml is None:
-                    return
-                _toml = toml.loads(requests.get(tomlurl).text)
-                return _toml
-        return None
-    except Exception as e:
-        print(e)
-        return None
+    if CONF["network"] == "TESTNET":
+        url = "https://" + asset_issuer + "/.well-known/stellar.toml"
+        toml = requests.get(url).text
+        return toml
+    else:
+        url = horizon_url()
+        _url = url + "assets?asset_code=" + asset
+        reponse = requests.get(_url)
+        res = reponse.json()
+        try:
+            records = res["_embedded"]["records"]
+            for record in records:
+                if asset_issuer in record["_links"]["toml"]["href"]:
+                    tomlurl = record["_links"]["toml"]["href"]
+                    if toml is None:
+                        return
+                    _toml = toml.loads(requests.get(tomlurl).text)
+                    return _toml
+            return None
+        except Exception as e:
+            print(e)
+            return None
 
 
 def load_conf():
@@ -262,7 +269,8 @@ def list_balances(check_asset=""):
                         record["asset_code"]
                         + " <ansiblue>"
                         + record["balance"]
-                        + "</ansiblue>"
+                        + "</ansiblue> EUR:"
+                        + "{:.2f}".format(float(price_eur) * float(record["balance"]))
                     )
                 )
     if check_asset != "":
@@ -323,7 +331,7 @@ def print_help():
            stcli - a repl command line crypto wallet for stellar that is simple and all in one file
     SYNOPSIS
             DESCRIPTION
-                                                     COMMAND OPTIONS
+                                            COMMAND OPTIONS
                 r [receive] - displays the public key and or federated address
                 s [send] amount asset address memo [text|id] e.g. s 1 XLM <address>
                 b [balances] - shows the balances of all assets
@@ -334,9 +342,9 @@ def print_help():
                 v [version] - displays version
                 pps [payment path send] - allows you to send path payments e.g. pps <amount> <asset code> <address>  (in beta) 
                 ppr [payment path recieve] - allows you to recieve with path payments e.g ppr <amount> <asset code> <address> (in beta)
-                deposit - brings up deposit menu  e.g. d tempo.eu.com eurt
-                withdrawal - brings up withdrawal menu w tempo.eu.com eurt
-                direct transfer - allows you to send direct transfers to a bank account e.g. dt kbtrading.org eurt 10  (in beta)
+                deposit - brings up deposit menu  e.g. d tempo.eu.com eurt (sep 24)
+                withdrawal - brings up withdrawal menu w tempo.eu.com eurt (sep 24)
+                direct transfer - allows you to send direct transfers to a bank account e.g. dt kbtrading.org eurt 10  (sep 31 - in beta)
                 conf - prints configuration
                 cls [clear] - clears the screen
                 q [quit] - quit app
@@ -715,6 +723,7 @@ def deposit(text):
         res = session.prompt("server asset > ")
         server, asset = res.split()[0], res.split()[1]
         token = auth(asset=asset, asset_issuer=server)
+        # print(token)
         if token is not None:
             data = {
                 "asset_code": asset,
@@ -729,6 +738,7 @@ def deposit(text):
             )
             response = requests.post(url, data=data, headers=headers).json()
             webbrowser.open(response["url"], new=0, autoraise=True)
+
         else:
             print("Auth server not found for " + asset)
             return
@@ -759,7 +769,7 @@ def withdrawal(text):
         server = text.split()[1]
         asset = text.split()[2]
     else:
-        print("server asset e.g. tempo.eucom eurt, apay.io bch or naobtc.com btc")
+        print("server asset e.g. apay.io bch or naobtc.com btc")
         res = session.prompt("server asset> ")
         try:
             server, asset = res.split()[0], res.split()[1]
@@ -781,10 +791,50 @@ def withdrawal(text):
             response = requests.post(url, data=data, headers=headers).json()
             print(response)
             webbrowser.open(response["url"], new=0, autoraise=True)
+            transaction_id = response["id"]
+            print("transaction id: " + transaction_id)
+
+            # Get transaction status
+            print("pending user transfer start")
+            print("waiting for user to start transfer")
+            while True:
+                time.sleep(5)
+                transaction_details = requests.get(
+                    toml_link["TRANSFER_SERVER_SEP0024"]
+                    + "/transaction?id="
+                    + transaction_id,
+                    headers=headers,
+                ).json()
+                print(transaction_details)
+                if transaction_details["status"] == "pending_user_transfer_start":
+                    print("waiting for user to start transfer")
+                    break
+                elif transaction_details["status"] == "pending_anchor":
+                    print("waiting for anchor to start transfer")
+                    break
+                elif transaction_details["status"] == "pending_stellar":
+                    print("waiting for stellar to start transfer")
+                    break
+                elif transaction_details["status"] == "pending_external":
+                    print("waiting for external to start transfer")
+                    break
+
+            # Continue with transaction
+
         else:
             print("Auth server not found for " + asset)
     else:
         print("enter valid asset")
+
+
+def transactions():
+    print_formatted_text(HTML("<ansiblue>\n### TRANSACTIONS ###</ansiblue>\n"))
+    print("transactions will show you the last 10 transactions")
+    print("you can also use the stellar.expert explorer")
+    print("https://stellar.expert/explorer/public/account/" + CONF["public_key"])
+    response = server().transactions().for_account(CONF["public_key"]).limit(10).call()
+    for record in response["_embedded"]["records"]:
+        print(record)
 
 
 def server():
@@ -904,6 +954,7 @@ def direct_transfer():
                                 }
                             },
                         }
+                        print(payload)
                         headers = {"Authorization": "Bearer " + token}
                         url = toml_link["DIRECT_PAYMENT_SERVER"] + "/transactions"
                         response = requests.post(
@@ -966,7 +1017,7 @@ def main():
         elif text == "version" or text == "v":
             print("VERSION: " + VERSION)
         elif text[0] == "d" and text[1] == "t":
-            direct_transfer(text)
+            direct_transfer()
         elif text[0] == "d":
             deposit(text)
         elif text[0] == "w":
@@ -979,7 +1030,8 @@ def main():
             path_payment_send(text)
         elif text[0] == "p" and text[1] == "p" and text[2] == "r":
             path_payment_receive(text)
-
+        elif text[0] == "t":
+            transactions()
         elif text == "cls":
             if platform.system() == "Windows":
                 os.system("cls")
