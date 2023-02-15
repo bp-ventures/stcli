@@ -52,28 +52,23 @@ VERSION = "0.1.5"
 
 
 def get_stellar_toml(asset, asset_issuer):
-    if CONF["network"] == "TESTNET":
-        url = "https://" + asset_issuer + "/.well-known/stellar.toml"
-        toml = requests.get(url).text
-        return toml
-    else:
-        url = horizon_url()
-        _url = url + "assets?asset_code=" + asset
-        reponse = requests.get(_url)
-        res = reponse.json()
-        try:
-            records = res["_embedded"]["records"]
-            for record in records:
-                if asset_issuer in record["_links"]["toml"]["href"]:
-                    tomlurl = record["_links"]["toml"]["href"]
-                    if toml is None:
-                        return
-                    _toml = toml.loads(requests.get(tomlurl).text)
-                    return _toml
-            return None
-        except Exception as e:
-            print(e)
-            return None
+    url = horizon_url()
+    _url = url + "assets?asset_code=" + asset
+    reponse = requests.get(_url)
+    res = reponse.json()
+    try:
+        records = res["_embedded"]["records"]
+        for record in records:
+            if asset_issuer in record["_links"]["toml"]["href"]:
+                tomlurl = record["_links"]["toml"]["href"]
+                if toml is None:
+                    return
+                _toml = toml.loads(requests.get(tomlurl).text)
+                return _toml
+        return None
+    except Exception as e:
+        print(e)
+        return None
 
 
 def load_conf():
