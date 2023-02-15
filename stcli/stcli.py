@@ -920,7 +920,7 @@ def direct_transfer():
                 print("Please enter valid asset")
                 return
         except Exception:
-            print("Request format error")
+            print("Transaction format error")
             return
     else:
         print("Request format error")
