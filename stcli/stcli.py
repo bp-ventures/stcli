@@ -332,8 +332,8 @@ def print_help():
                 f [fund] - fund a testnet address
                 h [history] - history of transactions
                 v [version] - displays version
-                pps [payment path send] - allows you to send path payments e.g. pps 1 XLM <address>  (in beta) 
-                ppr [payment path recieve] - allows you to recieve with path payments e.g ppr 1 XLM <address> (in beta)
+                pps [payment path send] - allows you to send path payments e.g. pps <amount> <asset code> <address>  (in beta) 
+                ppr [payment path recieve] - allows you to recieve with path payments e.g ppr <amount> <asset code> <address> (in beta)
                 deposit - brings up deposit menu  e.g. d tempo.eu.com eurt
                 withdrawal - brings up withdrawal menu w tempo.eu.com eurt
                 direct transfer - allows you to send direct transfers to a bank account e.g. dt kbtrading.org eurt 10  (in beta)
@@ -574,11 +574,6 @@ def start_app():
         print("using public key:" + CONF["public_key"] + "network: " + CONF["network"])
     if CONF["public_key"]:
         list_balances()
-
-
-def path_payment(text):
-    path_payment_send(text)
-    # print("..checking path payment options not yet implemented")
 
 
 def path_payment_send(text):
@@ -856,7 +851,7 @@ def trustline(asset, asset_issuer):
     return response["successful"]
 
 
-def direct_transfer(text):
+def direct_transfer():
     print_formatted_text(HTML("<ansiblue>\n### DIRECT TRANSFER ###</ansiblue>\n"))
     print("direct transfer allows you to send assets to another account")
     print("direct transfer e.g. kbtrading.org eurt 10")
@@ -864,54 +859,71 @@ def direct_transfer(text):
     rlen = res.split()
     if len(rlen) > 2:
         try:
-            asset, server, amount = res.split()[0], res.split()[1], res.split()[2]
-            remitter_email = session.prompt("remitter email> ")
-            remitter_first_name = session.prompt("remitter_first_name> ")
-            remitter_last_name = session.prompt("remitter_last_name> ")
-            remitter_phone_number = session.prompt("remitter_phone_number> ")
-            beneficiary_email = session.prompt("beneficiary_email> ")
-            beneficiary_first_name = session.prompt("beneficiary_first_name> ")
-            beneficiary_last_name = session.prompt("beneficiary_last_name> ")
-            beneficiary_bank_iban = session.prompt("beneficiary_bank_iban> ")
-            beneficiary_bank_bic = session.prompt("beneficiary_bank_bic> ")
-            beneficiary_phone_number = session.prompt("beneficiary_phone_number> ")
-
+            server, asset, amount = res.split()[0], res.split()[1], res.split()[2]
             if asset is not None:
+                print("Authencating with " + server + "...")
                 token = auth(asset=asset, asset_issuer=server)
                 if token is not None:
-                    payload = {
-                        "amount": amount,
-                        "asset_code": asset,
-                        "fields": {
-                            "transaction": {
-                                "remitter_email": remitter_email,
-                                "remitter_first_name": remitter_first_name,
-                                "remitter_last_name": remitter_last_name,
-                                "remitter_phone_number": remitter_phone_number,
-                                "beneficiary_email": beneficiary_email,
-                                "beneficiary_first_name": beneficiary_first_name,
-                                "beneficiary_last_name": beneficiary_last_name,
-                                "beneficiary_bank_iban": beneficiary_bank_iban,
-                                "beneficiary_bank_bic": beneficiary_bank_bic,
-                                "beneficiary_phone_number": beneficiary_phone_number,
-                            }
-                        },
-                    }
-                    headers = {"Authorization": "Bearer " + token}
                     toml_link = get_stellar_toml(asset=asset, asset_issuer=server)
-                    url = toml_link["TRANSFER_SERVER_SEP0031"] + "/transactions"
-                    response = requests.post(url, json=payload, headers=headers).json()
-                    print(response)
-                    # webbrowser.open(response["url"], new=0, autoraise=True)
+                    if toml_link["DIRECT_PAYMENT_SERVER"] is not None:
+                        remitter_email = session.prompt("remitter email> ")
+                        remitter_first_name = session.prompt("remitter_first_name> ")
+                        remitter_last_name = session.prompt("remitter_last_name> ")
+                        remitter_phone_number = session.prompt(
+                            "remitter_phone_number> "
+                        )
+                        beneficiary_email = session.prompt("beneficiary_email> ")
+                        beneficiary_first_name = session.prompt(
+                            "beneficiary_first_name> "
+                        )
+                        beneficiary_last_name = session.prompt(
+                            "beneficiary_last_name> "
+                        )
+                        beneficiary_bank_iban = session.prompt(
+                            "beneficiary_bank_iban> "
+                        )
+                        beneficiary_bank_bic = session.prompt("beneficiary_bank_bic> ")
+                        beneficiary_phone_number = session.prompt(
+                            "beneficiary_phone_number> "
+                        )
+                        payload = {
+                            "amount": amount,
+                            "asset_code": asset,
+                            "fields": {
+                                "transaction": {
+                                    "remitter_email": remitter_email,
+                                    "remitter_first_name": remitter_first_name,
+                                    "remitter_last_name": remitter_last_name,
+                                    "remitter_phone_number": remitter_phone_number,
+                                    "beneficiary_email": beneficiary_email,
+                                    "beneficiary_first_name": beneficiary_first_name,
+                                    "beneficiary_last_name": beneficiary_last_name,
+                                    "beneficiary_bank_iban": beneficiary_bank_iban,
+                                    "beneficiary_bank_bic": beneficiary_bank_bic,
+                                    "beneficiary_phone_number": beneficiary_phone_number,
+                                }
+                            },
+                        }
+                        headers = {"Authorization": "Bearer " + token}
+                        url = toml_link["DIRECT_PAYMENT_SERVER"] + "/transactions"
+                        response = requests.post(
+                            url, json=payload, headers=headers
+                        ).json()
+                        print(response)
+                    else:
+                        print("Direct Payment not supported for " + asset)
+                        return
                 else:
                     print("Auth server not found for " + asset)
+                    return
             else:
-                print("enter valid asset")
+                print("Please enter valid asset")
+                return
         except Exception:
-            print("format error")
+            print("Request format error")
             return
     else:
-        print("format error")
+        print("Request format error")
         return
 
 
