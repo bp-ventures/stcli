@@ -49,7 +49,7 @@ session = PromptSession(history=FileHistory(".myhistory"))
 VERSION = "0.1.5"
 
 
-def getStellarToml(asset, asset_issuer):
+def get_stellar_toml(asset, asset_issuer):
     url = horizon_url()
     _url = url + "assets?asset_code=" + asset
     reponse = requests.get(_url)
@@ -230,30 +230,40 @@ def list_balances(check_asset=""):
         )
         return
 
-    r = requests.get("https://api.kraken.com/0/public/Ticker?pair=BTCEUR,XLMEUR,ETHEUR")
-    data = r.json()["result"]
+    res = requests.get(
+        "https://api.kraken.com/0/public/Ticker?pair=BTCEUR,XLMEUR,ETHEUR"
+    )
+    data = res.json()["result"]
     price_eur = data["XXLMZEUR"]["c"][0]
     #  print('.. rate ' + str(rate))
-    for x in account["balances"]:
-        if x["asset_type"] == "native":
+    for record in account["balances"]:
+        if record["asset_type"] == "native":
             if check_asset != "":
                 continue
-            eur_val = float(price_eur) * float(x["balance"])
+            eur_val = float(price_eur) * float(record["balance"])
             print_formatted_text(
                 HTML(
                     "XLM: <ansiblue>"
-                    + x["balance"]
+                    + record["balance"]
                     + "</ansiblue> EUR:"
                     + "{:.2f}".format(eur_val)
                 )
             )
+        # liquidity_pool_shares TBI
+        elif record["asset_type"] == "liquidity_pool_shares":
+            continue
         else:
             if check_asset != "":
-                if check_asset.upper() == x["asset_code"].upper():
+                if check_asset.upper() == record["asset_code"].upper():
                     return True
             else:
                 print_formatted_text(
-                    HTML(x["asset_code"] + " <ansiblue>" + x["balance"] + "</ansiblue>")
+                    HTML(
+                        record["asset_code"]
+                        + " <ansiblue>"
+                        + record["balance"]
+                        + "</ansiblue>"
+                    )
                 )
     if check_asset != "":
         return False
@@ -281,7 +291,7 @@ def trust_asset(text):
     asset_code = val[2]
 
     builder = transaction_builder()
-    toml_link = getStellarToml(asset_code, asset_issuer)
+    toml_link = get_stellar_toml(asset_code, asset_issuer)
     asset_info = toml_link["CURRENCIES"][0]
     _asset = Asset(asset_info["code"], asset_info["issuer"])
     if val[0][0] == "t":
@@ -373,9 +383,9 @@ def fed(domain, address):
     )
     data = {"q": address, "type": "name"}
     print("getting federation with " + FED["FEDERATION_SERVER"] + " " + address)
-    r = requests.get(url=FED["FEDERATION_SERVER"], params=data)
-    print(r.text)
-    return r.json()
+    response = requests.get(url=FED["FEDERATION_SERVER"], params=data)
+    print(response.text)
+    return response.json()
 
 
 def history():
@@ -391,34 +401,34 @@ def history():
             print("no history")
             return
         else:
-            for x in payments:
-                if x["type"] == "create_account":
+            for payment in payments:
+                if payment["type"] == "create_account":
                     print(
-                        x["created_at"]
+                        payment["created_at"]
                         + " "
-                        + x["type"]
+                        + payment["type"]
                         + " start "
-                        + x["starting_balance"]
+                        + payment["starting_balance"]
                         + "\n"
                         + horizon_url()
                         + "operations/"
-                        + x["id"]
+                        + payment["id"]
                     )
                 else:
                     print(
-                        x["created_at"]
+                        payment["created_at"]
                         + " "
-                        + x["type"]
+                        + payment["type"]
                         + " "
-                        + x["to"]
+                        + payment["to"]
                         + " "
-                        + x["from"]
+                        + payment["from"]
                         + " "
-                        + x["amount"]
+                        + payment["amount"]
                         + "\n"
                         + horizon_url()
                         + "operations/"
-                        + x["id"]
+                        + payment["id"]
                     )
     except Exception as e:
         print(e)
@@ -429,13 +439,14 @@ def get_balance_issuer(amount, asset):
         return 0, ""
     try:
         account = server().accounts().account_id(CONF["public_key"]).call()
-        for b in account["balances"]:
-            if asset == b["asset_code"]:
-                if float(b["balance"]) < float(amount):
+        for record in account["balances"]:
+            if asset == record["asset_code"]:
+                # liquidity pool shared TBI
+                if float(record["balance"]) < float(amount):
                     print("error insufficient funds")
-                    return 1, b["asset_issuer"]
+                    return 1, record["asset_issuer"]
                 else:
-                    return 0, b["asset_issuer"]
+                    return 0, record["asset_issuer"]
     except Exception as e:
         print("account not found")
 
@@ -684,8 +695,8 @@ def deposit(text):
         "Deposit servers allow you to cash in assets into your wallet. We support naobtc.com, apay.io and tempo.eu.com"
     )
     print("you need to trust the asset before depositing.. eg. trust api.io BCH")
-    r = text.split()
-    if len(r) > 2:
+    res = text.split()
+    if len(res) > 2:
         server = text.split()[1]
         asset = text.split()[2].upper()
         print("deposit to " + server + " asset " + asset)
@@ -700,7 +711,7 @@ def deposit(text):
                 "account": CONF["public_key"],
             }
             headers = {"Authorization": "Bearer " + token}
-            toml_link = getStellarToml(asset, asset_issuer=server)
+            toml_link = get_stellar_toml(asset, asset_issuer=server)
 
             url = (
                 toml_link["TRANSFER_SERVER_SEP0024"]
@@ -733,8 +744,8 @@ def withdrawal(text):
     print(
         "withdrawal allows you to remove assets from your wallet such as EUR, BCH, BTC"
     )
-    r = text.split()
-    if len(r) > 2:
+    res = text.split()
+    if len(res) > 2:
         server = text.split()[1]
         asset = text.split()[2]
     else:
@@ -752,7 +763,7 @@ def withdrawal(text):
                 "asset_code": asset,
             }
             headers = {"Authorization": "Bearer " + token}
-            toml_link = getStellarToml(asset=asset, asset_issuer=server)
+            toml_link = get_stellar_toml(asset=asset, asset_issuer=server)
             url = (
                 toml_link["TRANSFER_SERVER_SEP0024"]
                 + "/transactions/withdraw/interactive"
@@ -780,7 +791,7 @@ def sys_exit():
 
 def auth(asset, asset_issuer):
     try:
-        toml_link = getStellarToml(asset=asset, asset_issuer=asset_issuer)
+        toml_link = get_stellar_toml(asset=asset, asset_issuer=asset_issuer)
         if toml_link is not None:
             auth_url = toml_link["WEB_AUTH_ENDPOINT"]
 
@@ -815,7 +826,7 @@ def trustline(asset, asset_issuer):
     print("Adding trustline to the asset issuer...")
     private_key = CONF["private_key"]
     url = Server(horizon_url=horizon_url())
-    toml_link = getStellarToml(asset=asset, asset_issuer=asset_issuer)
+    toml_link = get_stellar_toml(asset=asset, asset_issuer=asset_issuer)
     asset_info = toml_link["CURRENCIES"][0]
     keypair = Keypair.from_secret(private_key)
     account = url.load_account(keypair.public_key)
@@ -835,8 +846,8 @@ def direct_transfer(text):
     print("direct transfer allows you to send assets to another account")
     print("direct transfer e.g. kbtrading.org eurt 10")
     res = session.prompt("direct transfer> ")
-    r = res.split()
-    if len(r) > 2:
+    rlen = res.split()
+    if len(rlen) > 2:
         try:
             asset, server, amount = res.split()[0], res.split()[1], res.split()[2]
             remitter_email = session.prompt("remitter email> ")
@@ -872,7 +883,7 @@ def direct_transfer(text):
                         },
                     }
                     headers = {"Authorization": "Bearer " + token}
-                    toml_link = getStellarToml(asset=asset, asset_issuer=server)
+                    toml_link = get_stellar_toml(asset=asset, asset_issuer=server)
                     url = toml_link["TRANSFER_SERVER_SEP0031"] + "/transactions"
                     response = requests.post(url, json=payload, headers=headers).json()
                     print(response)
