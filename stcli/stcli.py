@@ -237,7 +237,10 @@ def list_balances(check_asset=""):
     price_eur = data["XXLMZEUR"]["c"][0]
     #  print('.. rate ' + str(rate))
     for record in account["balances"]:
-        if record["asset_type"] == "native":
+        if (
+            record["asset_type"] == "native"
+            or record["asset_type"] == "liquidity_pool_shares"
+        ):
             if check_asset != "":
                 continue
             eur_val = float(price_eur) * float(record["balance"])
@@ -249,9 +252,6 @@ def list_balances(check_asset=""):
                     + "{:.2f}".format(eur_val)
                 )
             )
-        # liquidity_pool_shares TBI
-        elif record["asset_type"] == "liquidity_pool_shares":
-            continue
         else:
             if check_asset != "":
                 if check_asset.upper() == record["asset_code"].upper():
@@ -440,8 +440,10 @@ def get_balance_issuer(amount, asset):
     try:
         account = server().accounts().account_id(CONF["public_key"]).call()
         for record in account["balances"]:
-            if asset == record["asset_code"]:
-                # liquidity pool shared TBI
+            if (
+                asset == record["asset_code"]
+                or record["asset_type"] == "liquidity_pool_shares"
+            ):
                 if float(record["balance"]) < float(amount):
                     print("error insufficient funds")
                     return 1, record["asset_issuer"]
@@ -617,32 +619,28 @@ def path_payment_send(text):
         if len(data["_embedded"]["records"]) == 0:
             print("no path found")
             return
-        for record in data["_embedded"]["records"]:
-            print("path found")
-            print(record)
-            # print("sending")
-            # builder = transaction_builder()
-            # builder.append_payment_op(
-            #     record["destination_amount"],
-            #     record["destination_asset_code"],
-            #     record["destination_asset_issuer"],
-            #     address,
-            #     record["source_amount"],
-            #     record["source_asset_code"],
-            #     record["source_asset_issuer"],
-            # )
-            # try:
-            #     envelope = builder.build()
-            #     if CONF["multisig"] != "":
-            #         print(
-            #             "You have 2of2 multisig - send this data to the other key to sign when you get it back type signsend data"
-            #         )
-            #         print(envelope.to_xdr())
-            #         return
-            #     envelope.sign(keypair())
-            # #  print(server().submit_transaction(envelope))
-            # except Exception as e:
-            #     print("error: " + e)
+        record = data["_embedded"]["records"][0]
+        print("best path found")
+        print(record)
+        _asset = Asset(
+            record["destination_asset_code"], record["destination_asset_issuer"]
+        )
+        builder = transaction_builder()
+        builder.append_payment_op(address, _asset, record["destination_amount"])
+        try:
+            envelope = builder.build()
+            if CONF["multisig"] != "":
+                print(
+                    "You have 2of2 multisig - send this data to the other key to sign when you get it back type signsend data"
+                )
+                print(envelope.to_xdr())
+                return
+            envelope.sign(keypair())
+            print(server().submit_transaction(envelope))
+        except Exception as e:
+            print("error: " + e)
+    else:
+        print("error: " + str(response.status_code))
 
 
 def path_payment_receive(text):
@@ -684,9 +682,26 @@ def path_payment_receive(text):
         if len(data["_embedded"]["records"]) == 0:
             print("no path found")
             return
-        for record in data["_embedded"]["records"]:
-            print("path found")
-            print(record)
+        record = data["_embedded"]["records"][0]
+        print("best path found")
+        print(record)
+        _asset = Asset(record["source_asset_code"], record["source_asset_issuer"])
+        builder = transaction_builder()
+        builder.append_payment_op(address, _asset, record["source_amount"])
+        try:
+            envelope = builder.build()
+            if CONF["multisig"] != "":
+                print(
+                    "You have 2of2 multisig - send this data to the other key to sign when you get it back type signsend data"
+                )
+                print(envelope.to_xdr())
+                return
+            envelope.sign(keypair())
+            print(server().submit_transaction(envelope))
+        except Exception as e:
+            print("error: " + e)
+    else:
+        print("error: " + str(response.status_code))
 
 
 def deposit(text):
