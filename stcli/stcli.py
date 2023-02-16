@@ -1,5 +1,6 @@
 #!/usr/bin/python3
 from __future__ import unicode_literals, print_function
+import base64
 import time
 import webbrowser
 import requests
@@ -51,24 +52,29 @@ session = PromptSession(history=FileHistory(".myhistory"))
 VERSION = "0.1.5"
 
 
-def get_stellar_toml(asset, asset_issuer):
-    url = horizon_url()
-    _url = url + "assets?asset_code=" + asset
-    reponse = requests.get(_url)
-    res = reponse.json()
-    try:
-        records = res["_embedded"]["records"]
-        for record in records:
-            if asset_issuer in record["_links"]["toml"]["href"]:
-                tomlurl = record["_links"]["toml"]["href"]
-                if toml is None:
-                    return
-                _toml = toml.loads(requests.get(tomlurl).text)
+def get_stellar_toml(asset, asset_issuer=None):
+    if asset_issuer is None:
+        _asset_issuer = get_asset_issuer(asset)
+    else:
+        _asset_issuer = asset_issuer
+    if _asset_issuer is not None:
+        url = horizon_url()
+        _url = url + "accounts/" + _asset_issuer
+        response = requests.get(_url).json()
+        try:
+            # home_domain = response["home_domain"]
+            home_domain = "netxd-sb-anchor.bpventures.us"
+            if home_domain is not None:
+                _toml = toml.loads(
+                    requests.get(
+                        "https://" + home_domain + "/.well-known/stellar.toml"
+                    ).text
+                )
                 return _toml
-        return None
-    except Exception as e:
-        print(e)
-        return None
+            return None
+        except Exception as e:
+            print(e)
+            return None
 
 
 def load_conf():
@@ -279,46 +285,6 @@ def network_passphrase():
         return Network.TESTNET_NETWORK_PASSPHRASE
 
 
-def trust_asset(text):
-    if CONF["private_key"] == "":
-        print("no private key setup  - use set to set key or c to create wallet")
-        return
-    val = text.split(" ")
-    if len(val) != 3:
-        if val[0][0] == "t":
-            print("invalid syntax please use trust <issuer pubkey> <asset code>")
-        else:
-            print("invalid syntax please use untrust <issuer pubkey> <asset code>")
-        return
-    asset_issuer = val[1]
-    asset_code = val[2]
-
-    builder = transaction_builder()
-    toml_link = get_stellar_toml(asset_code, asset_issuer)
-    asset_info = toml_link["CURRENCIES"][0]
-    _asset = Asset(asset_info["code"], asset_info["issuer"])
-    if val[0][0] == "t":
-        print("trusting asset_code=" + asset_code + " issuer=" + asset_issuer)
-        builder.append_change_trust_op(_asset)
-    else:
-        print(
-            "untrusting asset_code="
-            + asset_code
-            + " issuer="
-            + asset_issuer
-            + ", please ensure your balance is 0 before this operation"
-        )
-        builder.append_change_trust_op(_asset, limit="0")
-    try:
-        envelope = builder.build()
-        envelope.sign(keypair())
-        response = server().submit_transaction(envelope)
-        return response["successful"]
-    except Exception as e:
-        print(e)
-        return
-
-
 def print_help():
     print(
         """
@@ -335,6 +301,8 @@ def print_help():
                 f [fund] - fund a testnet address
                 h [history] - history of transactions
                 v [version] - displays version
+                tt [trust] - trust an asset e.g. t XDUS <asset issuer>
+                ut [untrust] - untrust an asset e.g. t XDUS <asset issuer>
                 pps [payment path send] - allows you to send path payments e.g. pps <amount> <asset code> <address>  (in beta) 
                 ppr [payment path recieve] - allows you to recieve with path payments e.g ppr <amount> <asset code> <address> (in beta)
                 deposit - brings up deposit menu  e.g. d tempo.eu.com eurt (sep 24)
@@ -454,6 +422,39 @@ def get_balance_issuer(amount, asset):
                     return 0, record["asset_issuer"]
     except Exception as e:
         print("account not found")
+
+
+def get_asset_issuer(asset):
+    try:
+        account = server().accounts().account_id(CONF["public_key"]).call()
+        count = 1
+        for record in account["balances"]:
+            if (
+                record["asset_type"] == "liquidity_pool_shares"
+                or record["asset_type"] == "native"
+            ):
+                continue
+            else:
+                if asset == record["asset_code"]:
+                    print(str(count) + ": " + record["asset_issuer"])
+                    count += 1
+        if count > 1:
+            print("select one of the above issuers e.g. 1")
+            res = session.prompt("select assset issuer > ")
+            try:
+                if int(res) in range(count):
+                    return account["balances"][int(res) - 1]["asset_issuer"]
+            except Exception as e:
+                print(e)
+        else:
+            print("no asset issuer found")
+            res = session.prompt("want to provide asset issuer? y/n > ")
+            if res == "y":
+                return session.prompt("provide asset issuer > ")
+        return None
+    except Exception as e:
+        print(e)
+    return None
 
 
 def send_asset(text):
@@ -707,7 +708,7 @@ def deposit(text):
     print(
         "Deposit servers allow you to cash in assets into your wallet. We support naobtc.com, apay.io and tempo.eu.com"
     )
-    print("you need to trust the asset before depositing.. eg. trust api.io BCH")
+    print("you need to trust the asset before depositing.. eg. BCH")
     res = text.split()
     if len(res) > 2:
         server = text.split()[1]
@@ -717,7 +718,7 @@ def deposit(text):
         print("server asset e.g. apay.io bch or naobtc.com btc")
         res = session.prompt("server asset > ")
         server, asset = res.split()[0], res.split()[1]
-        token = auth(asset=asset, asset_issuer=server)
+        token = auth(asset=asset)
         # print(token)
         if token is not None:
             data = {
@@ -725,18 +726,25 @@ def deposit(text):
                 "account": CONF["public_key"],
             }
             headers = {"Authorization": "Bearer " + token}
-            toml_link = get_stellar_toml(asset, asset_issuer=server)
-
-            url = (
-                toml_link["TRANSFER_SERVER_SEP0024"]
-                + "/transactions/deposit/interactive"
-            )
-            response = requests.post(url, data=data, headers=headers).json()
-            webbrowser.open(response["url"], new=0, autoraise=True)
+            toml_link = get_stellar_toml(asset)
+            if toml_link is None:
+                print("no toml link found for " + asset)
+                return
+            else:
+                print(toml_link)
+                url = (
+                    toml_link["TRANSFER_SERVER_SEP0024"]
+                    + "/transactions/deposit/interactive"
+                )
+                response = requests.post(url, data=data, headers=headers).json()
+                webbrowser.open(response["url"], new=0, autoraise=True)
 
         else:
             print("Auth server not found for " + asset)
             return
+
+        transaction_id = response["id"]
+        print("transaction id: " + transaction_id)
 
 
 def set_multisig(trusted_key):
@@ -760,36 +768,31 @@ def withdrawal(text):
         "withdrawal allows you to remove assets from your wallet such as EUR, BCH, BTC"
     )
     res = text.split()
-    if len(res) > 2:
-        server = text.split()[1]
-        asset = text.split()[2]
+    if len(res) > 1:
+        asset = text.split()[1]
     else:
-        print("server asset e.g. apay.io bch or naobtc.com btc")
-        res = session.prompt("server asset> ")
-        try:
-            server, asset = res.split()[0], res.split()[1]
-        except Exception:
-            print("format error")
-            return
+        print("server asset e.g. BTCLN <asset issuer>")
+        asset = session.prompt("enter asset> ")
+
     if asset is not None:
-        token = auth(asset=asset, asset_issuer=server)
+        token = auth(asset=asset)
         if token is not None:
             data = {
                 "asset_code": asset,
             }
             headers = {"Authorization": "Bearer " + token}
-            toml_link = get_stellar_toml(asset=asset, asset_issuer=server)
+            toml_link = get_stellar_toml(asset=asset)
             url = (
                 toml_link["TRANSFER_SERVER_SEP0024"]
                 + "/transactions/withdraw/interactive"
             )
             response = requests.post(url, data=data, headers=headers).json()
-            print(response)
+            # print(response)
             webbrowser.open(response["url"], new=0, autoraise=True)
             transaction_id = response["id"]
             print("transaction id: " + transaction_id)
 
-            # Get transaction status
+            # sep 24 withdrawal transaction flow
             print("pending user transfer start")
             print("waiting for user to start transfer")
             while True:
@@ -801,21 +804,50 @@ def withdrawal(text):
                     headers=headers,
                 ).json()
                 print(transaction_details)
-                if transaction_details["status"] == "pending_user_transfer_start":
-                    print("waiting for user to start transfer")
-                    break
-                elif transaction_details["status"] == "pending_anchor":
-                    print("waiting for anchor to start transfer")
-                    break
-                elif transaction_details["status"] == "pending_stellar":
-                    print("waiting for stellar to start transfer")
-                    break
-                elif transaction_details["status"] == "pending_external":
-                    print("waiting for external to start transfer")
-                    break
+                transaction = transaction_details["transaction"]
+                if transaction["status"] == "pending_user_transfer_start":
+                    print("Transfer started")
+                    _asset_issuer = get_asset_issuer(asset)
+                    _asset = Asset(asset, _asset_issuer)
+                    if _asset is None:
+                        print("asset not found")
+                        return
+                    else:
+                        builder = transaction_builder()
+                        if transaction["withdraw_memo_type"] == "text":
+                            builder.add_text_memo(transaction["withdraw_memo"])
+                        elif transaction["withdraw_memo_type"] == "id":
+                            builder.add_id_memo(transaction["withdraw_memo"])
+                        elif transaction["withdraw_memo_type"] == "hash":
+                            builder.add_hash_memo(
+                                base64.b64decode(transaction["withdraw_memo"])
+                            )
+                        builder.append_payment_op(
+                            destination=transaction["withdraw_anchor_account"],
+                            asset=_asset,
+                            amount=transaction["amount_in"],
+                        )
+                        envelope = builder.build()
+                        envelope.sign(keypair())
+                        tran_response = server().submit_transaction(envelope)
+                        print(tran_response["hash"])
+                        break
 
-            # Continue with transaction
-
+            while True:
+                # Continue with transaction
+                time.sleep(5)
+                transaction_details = requests.get(
+                    toml_link["TRANSFER_SERVER_SEP0024"]
+                    + "/transaction?id="
+                    + transaction_id,
+                    headers=headers,
+                ).json()
+                transaction = transaction_details["transaction"]
+                if transaction["status"] == "completed":
+                    print(transaction["status"])
+                    break
+                elif transaction["status"] == "pending_stellar":
+                    print("waiting for stellar approval")
         else:
             print("Auth server not found for " + asset)
     else:
@@ -844,12 +876,12 @@ def sys_exit():
     sys.exit()
 
 
-def auth(asset, asset_issuer):
+def auth(asset):
     try:
-        toml_link = get_stellar_toml(asset=asset, asset_issuer=asset_issuer)
+        toml_link = get_stellar_toml(asset=asset)
+        print(toml_link)
         if toml_link is not None:
             auth_url = toml_link["WEB_AUTH_ENDPOINT"]
-
             # get challenge transaction and sign it
             client_signing_key = Keypair.from_secret(CONF["private_key"])
             response = requests.get(
@@ -858,7 +890,7 @@ def auth(asset, asset_issuer):
             content = json.loads(response.content)
             envelope_xdr = content["transaction"]
             envelope_object = TransactionEnvelope.from_xdr(
-                envelope_xdr, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE
+                envelope_xdr, network_passphrase=network_passphrase()
             )
             envelope_object.sign(client_signing_key)
             client_signed_envelope_xdr = envelope_object.to_xdr()
@@ -877,7 +909,9 @@ def auth(asset, asset_issuer):
         return None
 
 
-def trustline(asset, asset_issuer):
+def trust_asset(text):
+    val = text.split()
+    asset, asset_issuer = val[1], val[2]
     print("Adding trustline to the asset issuer...")
     private_key = CONF["private_key"]
     url = Server(horizon_url=horizon_url())
@@ -886,7 +920,7 @@ def trustline(asset, asset_issuer):
     keypair = Keypair.from_secret(private_key)
     account = url.load_account(keypair.public_key)
     builder = TransactionBuilder(
-        source_account=account, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE
+        source_account=account, network_passphrase=network_passphrase()
     )
     asset = Asset(asset_info["code"], asset_info["issuer"])
     builder.append_change_trust_op(asset=asset).set_timeout(30)
@@ -907,9 +941,9 @@ def direct_transfer():
             server, asset, amount = res.split()[0], res.split()[1], res.split()[2]
             if asset is not None:
                 print("Authencating with " + server + "...")
-                token = auth(asset=asset, asset_issuer=server)
+                token = auth(asset=asset)
                 if token is not None:
-                    toml_link = get_stellar_toml(asset=asset, asset_issuer=server)
+                    toml_link = get_stellar_toml(asset=asset)
                     if toml_link["DIRECT_PAYMENT_SERVER"] is not None:
                         remitter_email = session.prompt("remitter email> ")
                         remitter_first_name = session.prompt("remitter_first_name> ")
@@ -1013,6 +1047,10 @@ def main():
             print("VERSION: " + VERSION)
         elif text[0] == "d" and text[1] == "t":
             direct_transfer()
+        elif text[0] == "t" and text[1] == "t":
+            trust_asset(text)
+        elif text[0] == "u" and text[1] == "t":
+            trust_asset(text, untrust=True)
         elif text[0] == "d":
             deposit(text)
         elif text[0] == "w":
