@@ -51,9 +51,12 @@ compl = WordCompleter(
 session = PromptSession(history=FileHistory(".myhistory"))
 VERSION = "0.1.5"
 
+_g_asset_isser = None
+
 
 def get_stellar_toml(asset, asset_issuer=None):
     if asset_issuer is None:
+        print("Fetching asset issuer from Horizon...")
         _asset_issuer = get_asset_issuer(asset)
     else:
         _asset_issuer = asset_issuer
@@ -771,7 +774,7 @@ def withdrawal(text):
     if len(res) > 1:
         asset = text.split()[1]
     else:
-        print("server asset e.g. BTCLN <asset issuer>")
+        print("server asset e.g. BTCLN or XDUS")
         asset = session.prompt("enter asset> ")
 
     if asset is not None:
@@ -795,6 +798,7 @@ def withdrawal(text):
             # sep 24 withdrawal transaction flow
             print("pending user transfer start")
             print("waiting for user to start transfer")
+            print("Transaction Status update: Please wait...")
             while True:
                 time.sleep(5)
                 transaction_details = requests.get(
@@ -803,7 +807,7 @@ def withdrawal(text):
                     + transaction_id,
                     headers=headers,
                 ).json()
-                print(transaction_details)
+                # print(transaction_details)
                 transaction = transaction_details["transaction"]
                 if transaction["status"] == "pending_user_transfer_start":
                     print("Transfer started")
@@ -879,7 +883,7 @@ def sys_exit():
 def auth(asset):
     try:
         toml_link = get_stellar_toml(asset=asset)
-        print(toml_link)
+        # print(toml_link)
         if toml_link is not None:
             auth_url = toml_link["WEB_AUTH_ENDPOINT"]
             # get challenge transaction and sign it
