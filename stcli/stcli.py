@@ -822,7 +822,9 @@ def withdrawal(text):
                     if transaction["status"] == "pending_user_transfer_start":
                         print("Transfer started")
                         # _asset_issuer = get_asset_issuer(asset)
+                        print("asset issuer: " + _asset_issuer)
                         _asset = Asset(asset, _asset_issuer)
+                        print("asset: " + str(_asset))
                         if _asset is None:
                             print("asset not found")
                             return
