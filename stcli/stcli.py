@@ -180,8 +180,34 @@ def transaction_builder():
     ).set_timeout(30)
 
 
+def set_account(settype, var1):
+    print("set account")
+    builder = transaction_builder()
+    if settype == "inflation":
+        builder.append_set_options_op(inflation_dest=var1)
+    else:
+        builder.append_set_options_op(home_domain=var1)
+    envelope = builder.build()
+    envelope.sign(keypair())
+    server().submit_transaction(envelope)
+
+
 def set_var(text):
-    return
+    cmd = text.split()
+    var = cmd[1].split("=")
+    if var[0] in ["inflation", "home_domain"]:
+        set_account(var[0], var[1])
+        return
+    if var[0] in ["multisig"]:
+        set_multisig(var[1])
+    if len(var) < 2:
+        print("format is set var=val")
+        return
+    print(text)
+    CONF[var[0]] = var[1]
+    with open(PTC, "w") as fp:
+        fp.write(toml.dumps(CONF))
+    list_balances()
 
 
 def create_wallet():
@@ -312,7 +338,6 @@ def print_help():
                 cls [clear] - clears the screen
                 q [quit] - quit app
                 set key=var .. e.g. set network=PUBLIC (do not use for private key - use k)
-                set inflation=tempo.eu.como not use for private key - use k)
                 set multisig=GPUBKEY sets a public key for multisig)
      AUTHOR:
             Put together by Anthony Barker for testing purposes
@@ -424,6 +449,22 @@ def get_balance_issuer(amount, asset):
         print("account not found")
 
 
+def get_home_domain(asset_issuser):
+    try:
+        url = horizon_url()
+        _url = url + "accounts/" + asset_issuser
+        response = requests.get(_url).json()
+        try:
+            if "home_domain" in response:
+                return response["home_domain"]
+            else:
+                return "no home domain"
+        except Exception as e:
+            print("no home domain")
+    except Exception as e:
+        print("no home domain")
+
+
 def get_asset_issuer(asset):
     try:
         account = server().accounts().account_id(CONF["public_key"]).call()
@@ -439,10 +480,10 @@ def get_asset_issuer(asset):
                     print(
                         str(count)
                         + ": "
+                        + get_home_domain(record["asset_issuer"])
+                        + "  ("
                         + record["asset_issuer"]
-                        # + " ("
-                        # + record["balance"]
-                        # + ")"
+                        + ")"
                     )
                     count += 1
         if count > 1:
