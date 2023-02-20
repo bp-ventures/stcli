@@ -54,7 +54,7 @@ VERSION = "0.1.5"
 
 def get_stellar_toml(asset, asset_issuer=None):
     if asset_issuer is None:
-        print("Fetching asset issuer from Horizon...")
+        print("Fetching asset issuer from Stellar Horizon...")
         _asset_issuer = get_asset_issuer(asset)
     else:
         _asset_issuer = asset_issuer
@@ -178,10 +178,6 @@ def transaction_builder():
         network_passphrase=network_passphrase(),
         base_fee=fetch_base_fee(),
     ).set_timeout(30)
-
-
-def set_account(settype, var1):
-    return
 
 
 def set_var(text):
@@ -970,7 +966,7 @@ def direct_transfer():
             server, asset, amount = res.split()[0], res.split()[1], res.split()[2]
             if asset is not None:
                 print("Authencating with " + server + "...")
-                toml_link = get_stellar_toml(asset=asset)
+                _asset_issuer, toml_link = get_stellar_toml(asset=asset)
                 token = auth(toml_link=toml_link)
                 if token is not None:
                     if toml_link["DIRECT_PAYMENT_SERVER"] is not None:
