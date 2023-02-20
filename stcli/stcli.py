@@ -51,8 +51,6 @@ compl = WordCompleter(
 session = PromptSession(history=FileHistory(".myhistory"))
 VERSION = "0.1.5"
 
-_g_asset_isser = None
-
 
 def get_stellar_toml(asset, asset_issuer=None):
     if asset_issuer is None:
@@ -73,11 +71,11 @@ def get_stellar_toml(asset, asset_issuer=None):
                         "https://" + home_domain + "/.well-known/stellar.toml"
                     ).text
                 )
-                return _toml
-            return None
+                return _asset_issuer, _toml
+            return None, None
         except Exception as e:
             print(e)
-            return None
+            return None, None
 
 
 def load_conf():
@@ -721,7 +719,8 @@ def deposit(text):
         print("server asset e.g. apay.io bch or naobtc.com btc")
         res = session.prompt("server asset > ")
         server, asset = res.split()[0], res.split()[1]
-        token = auth(asset=asset)
+        _asset_isser, toml_link = get_stellar_toml(asset)
+        token = auth(toml_link=toml_link)
         # print(token)
         if token is not None:
             data = {
@@ -729,7 +728,6 @@ def deposit(text):
                 "account": CONF["public_key"],
             }
             headers = {"Authorization": "Bearer " + token}
-            toml_link = get_stellar_toml(asset)
             if toml_link is None:
                 print("no toml link found for " + asset)
                 return
@@ -778,82 +776,84 @@ def withdrawal(text):
         asset = session.prompt("enter asset> ")
 
     if asset is not None:
-        token = auth(asset=asset)
-        if token is not None:
-            data = {
-                "asset_code": asset,
-            }
-            headers = {"Authorization": "Bearer " + token}
-            toml_link = get_stellar_toml(asset=asset)
-            url = (
-                toml_link["TRANSFER_SERVER_SEP0024"]
-                + "/transactions/withdraw/interactive"
-            )
-            response = requests.post(url, data=data, headers=headers).json()
-            # print(response)
-            webbrowser.open(response["url"], new=0, autoraise=True)
-            transaction_id = response["id"]
-            print("transaction id: " + transaction_id)
+        _asset_issuer, toml_link = get_stellar_toml(asset=asset)
+        if toml_link is not None:
+            token = auth(toml_link=toml_link)
+            if token is not None:
+                data = {
+                    "asset_code": asset,
+                }
+                headers = {"Authorization": "Bearer " + token}
 
-            # sep 24 withdrawal transaction flow
-            print("pending user transfer start")
-            print("waiting for user to start transfer")
-            print("Transaction Status update: Please wait...")
-            while True:
-                time.sleep(5)
-                transaction_details = requests.get(
+                url = (
                     toml_link["TRANSFER_SERVER_SEP0024"]
-                    + "/transaction?id="
-                    + transaction_id,
-                    headers=headers,
-                ).json()
-                # print(transaction_details)
-                transaction = transaction_details["transaction"]
-                if transaction["status"] == "pending_user_transfer_start":
-                    print("Transfer started")
-                    _asset_issuer = get_asset_issuer(asset)
-                    _asset = Asset(asset, _asset_issuer)
-                    if _asset is None:
-                        print("asset not found")
-                        return
-                    else:
-                        builder = transaction_builder()
-                        if transaction["withdraw_memo_type"] == "text":
-                            builder.add_text_memo(transaction["withdraw_memo"])
-                        elif transaction["withdraw_memo_type"] == "id":
-                            builder.add_id_memo(transaction["withdraw_memo"])
-                        elif transaction["withdraw_memo_type"] == "hash":
-                            builder.add_hash_memo(
-                                base64.b64decode(transaction["withdraw_memo"])
+                    + "/transactions/withdraw/interactive"
+                )
+                response = requests.post(url, data=data, headers=headers).json()
+                # print(response)
+                webbrowser.open(response["url"], new=0, autoraise=True)
+                transaction_id = response["id"]
+                print("transaction id: " + transaction_id)
+
+                # sep 24 withdrawal transaction flow
+                print("pending user transfer start")
+                print("waiting for user to start transfer")
+                print("Transaction Status update: Please wait...")
+                while True:
+                    time.sleep(5)
+                    transaction_details = requests.get(
+                        toml_link["TRANSFER_SERVER_SEP0024"]
+                        + "/transaction?id="
+                        + transaction_id,
+                        headers=headers,
+                    ).json()
+                    # print(transaction_details)
+                    transaction = transaction_details["transaction"]
+                    if transaction["status"] == "pending_user_transfer_start":
+                        print("Transfer started")
+                        # _asset_issuer = get_asset_issuer(asset)
+                        _asset = Asset(asset, _asset_issuer)
+                        if _asset is None:
+                            print("asset not found")
+                            return
+                        else:
+                            builder = transaction_builder()
+                            if transaction["withdraw_memo_type"] == "text":
+                                builder.add_text_memo(transaction["withdraw_memo"])
+                            elif transaction["withdraw_memo_type"] == "id":
+                                builder.add_id_memo(transaction["withdraw_memo"])
+                            elif transaction["withdraw_memo_type"] == "hash":
+                                builder.add_hash_memo(
+                                    base64.b64decode(transaction["withdraw_memo"])
+                                )
+                            builder.append_payment_op(
+                                destination=transaction["withdraw_anchor_account"],
+                                asset=_asset,
+                                amount=transaction["amount_in"],
                             )
-                        builder.append_payment_op(
-                            destination=transaction["withdraw_anchor_account"],
-                            asset=_asset,
-                            amount=transaction["amount_in"],
-                        )
-                        envelope = builder.build()
-                        envelope.sign(keypair())
-                        tran_response = server().submit_transaction(envelope)
-                        print(tran_response["hash"])
-                        break
+                            envelope = builder.build()
+                            envelope.sign(keypair())
+                            tran_response = server().submit_transaction(envelope)
+                            print(tran_response["hash"])
+                            break
 
-            while True:
-                # Continue with transaction
-                time.sleep(5)
-                transaction_details = requests.get(
-                    toml_link["TRANSFER_SERVER_SEP0024"]
-                    + "/transaction?id="
-                    + transaction_id,
-                    headers=headers,
-                ).json()
-                transaction = transaction_details["transaction"]
-                if transaction["status"] == "completed":
-                    print(transaction["status"])
-                    break
-                elif transaction["status"] == "pending_stellar":
-                    print("waiting for stellar approval")
-        else:
-            print("Auth server not found for " + asset)
+                while True:
+                    # Continue with transaction
+                    time.sleep(5)
+                    transaction_details = requests.get(
+                        toml_link["TRANSFER_SERVER_SEP0024"]
+                        + "/transaction?id="
+                        + transaction_id,
+                        headers=headers,
+                    ).json()
+                    transaction = transaction_details["transaction"]
+                    if transaction["status"] == "completed":
+                        print(transaction["status"])
+                        break
+                    elif transaction["status"] == "pending_stellar":
+                        print("waiting for stellar approval")
+            else:
+                print("Auth server not found for " + asset)
     else:
         print("enter valid asset")
 
@@ -880,9 +880,10 @@ def sys_exit():
     sys.exit()
 
 
-def auth(asset):
+def auth(toml_link):
     try:
-        toml_link = get_stellar_toml(asset=asset)
+        # if toml_link is None:
+        #     _asset_issuer, toml_link = get_stellar_toml(asset=asset)
         # print(toml_link)
         if toml_link is not None:
             auth_url = toml_link["WEB_AUTH_ENDPOINT"]
@@ -945,9 +946,9 @@ def direct_transfer():
             server, asset, amount = res.split()[0], res.split()[1], res.split()[2]
             if asset is not None:
                 print("Authencating with " + server + "...")
-                token = auth(asset=asset)
+                toml_link = get_stellar_toml(asset=asset)
+                token = auth(toml_link=toml_link)
                 if token is not None:
-                    toml_link = get_stellar_toml(asset=asset)
                     if toml_link["DIRECT_PAYMENT_SERVER"] is not None:
                         remitter_email = session.prompt("remitter email> ")
                         remitter_first_name = session.prompt("remitter_first_name> ")
