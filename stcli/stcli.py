@@ -63,19 +63,21 @@ def get_stellar_toml(asset, asset_issuer=None):
         _url = url + "accounts/" + _asset_issuer
         response = requests.get(_url).json()
         try:
-            # home_domain = response["home_domain"]
-            home_domain = "netxd-sb-anchor.bpventures.us"
-            if home_domain is not None:
-                _toml = toml.loads(
-                    requests.get(
-                        "https://" + home_domain + "/.well-known/stellar.toml"
-                    ).text
-                )
-                return _asset_issuer, _toml
+            if "home_domain" in response:
+                home_domain = response["home_domain"]
+                if home_domain is not None:
+                    _toml = toml.loads(
+                        requests.get(
+                            "https://" + home_domain + "/.well-known/stellar.toml"
+                        ).text
+                    )
+                    return _asset_issuer, _toml
             return None, None
         except Exception as e:
             print(e)
             return None, None
+    else:
+        return None, None
 
 
 def load_conf():
@@ -157,7 +159,8 @@ def fund():
 
 def fetch_base_fee():
     try:
-        return server().fetch_base_fee()
+        # return server().fetch_base_fee()
+        return 10000
     except (
         stellar_exceptions.ConnectionError,
         stellar_exceptions.NotFoundError,
@@ -437,14 +440,25 @@ def get_asset_issuer(asset):
                 continue
             else:
                 if asset == record["asset_code"]:
-                    print(str(count) + ": " + record["asset_issuer"])
+                    print(
+                        str(count)
+                        + ": "
+                        + record["asset_issuer"]
+                        # + " ("
+                        # + record["balance"]
+                        # + ")"
+                    )
                     count += 1
         if count > 1:
-            print("select one of the above issuers e.g. 1")
+            print(
+                "select one of the above issuers e.g. 1,2,3 etc Press 0 if you want to provide asset issuer"
+            )
             res = session.prompt("select assset issuer > ")
             try:
-                if int(res) in range(count):
-                    return account["balances"][int(res) - 1]["asset_issuer"]
+                if int(res) == 0:
+                    return session.prompt("provide asset issuer > ")
+                elif int(res) in range(count):
+                    return account["balances"][int(res)]["asset_issuer"]
             except Exception as e:
                 print(e)
         else:
@@ -452,6 +466,8 @@ def get_asset_issuer(asset):
             res = session.prompt("want to provide asset issuer? y/n > ")
             if res == "y":
                 return session.prompt("provide asset issuer > ")
+            else:
+                return None
         return None
     except Exception as e:
         print(e)
@@ -732,7 +748,6 @@ def deposit(text):
                 print("no toml link found for " + asset)
                 return
             else:
-                print(toml_link)
                 url = (
                     toml_link["TRANSFER_SERVER_SEP0024"]
                     + "/transactions/deposit/interactive"
@@ -774,7 +789,6 @@ def withdrawal(text):
     else:
         print("server asset e.g. BTCLN or XDUS")
         asset = session.prompt("enter asset> ")
-
     if asset is not None:
         _asset_issuer, toml_link = get_stellar_toml(asset=asset)
         if toml_link is not None:
@@ -834,9 +848,17 @@ def withdrawal(text):
                             envelope = builder.build()
                             envelope.sign(keypair())
                             tran_response = server().submit_transaction(envelope)
-                            print(tran_response["hash"])
+                            if "successful" in tran_response:
+                                if tran_response["successful"] is True:
+                                    print(
+                                        "Transaction successful, now waiting for anchor/external approval"
+                                    )
+                                else:
+                                    print("Transaction failed, please try again")
+                            else:
+                                print("Transaction failed, please try again")
+                            # print(tran_response)
                             break
-
                 while True:
                     # Continue with transaction
                     time.sleep(5)
@@ -854,6 +876,8 @@ def withdrawal(text):
                         print("waiting for stellar approval")
             else:
                 print("Auth server not found for " + asset)
+        else:
+            print("no toml found for (" + asset + ") with your selected asset issuer")
     else:
         print("enter valid asset")
 
