@@ -942,7 +942,10 @@ def trust_asset(text):
     print("Adding trustline to the asset issuer...")
     private_key = CONF["private_key"]
     url = Server(horizon_url=horizon_url())
-    toml_link = get_stellar_toml(asset=asset, asset_issuer=asset_issuer)
+    _asset_issuer, toml_link = get_stellar_toml(asset=asset, asset_issuer=asset_issuer)
+    if "CURRENCIES" not in toml_link:
+        print("Asset not found")
+        return
     asset_info = toml_link["CURRENCIES"][0]
     keypair = Keypair.from_secret(private_key)
     account = url.load_account(keypair.public_key)
