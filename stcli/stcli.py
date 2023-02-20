@@ -21,6 +21,9 @@ from stellar_sdk.sep.mnemonic import StellarMnemonic
 from stellar_sdk.transaction_builder import TransactionBuilder
 from stellar_sdk.network import Network
 
+# from multiprocessing import Pool
+
+
 # from stellar_sdk.xdr import SignerKey
 from prompt_toolkit import print_formatted_text, HTML
 
@@ -488,7 +491,7 @@ def get_asset_issuer(asset):
                     count += 1
         if count > 1:
             print(
-                "select one of the above issuers e.g. 1,2,3 etc Press 0 if you want to provide asset issuer"
+                "select one of the above issuers e.g. 1,2 etc or press 0 if you want to provide asset issuer"
             )
             res = session.prompt("select assset issuer > ")
             try:
@@ -762,19 +765,15 @@ def deposit(text):
     print(
         "Deposit servers allow you to cash in assets into your wallet. We support naobtc.com, apay.io and tempo.eu.com"
     )
-    print("you need to trust the asset before depositing.. eg. BCH")
+    print("you need to trust the asset before depositing.. eg. BTCLN")
     res = text.split()
-    if len(res) > 2:
-        server = text.split()[1]
-        asset = text.split()[2].upper()
-        print("deposit to " + server + " asset " + asset)
+    if len(res) > 1:
+        asset = text.split()[1]
     else:
-        print("server asset e.g. apay.io bch or naobtc.com btc")
-        res = session.prompt("server asset > ")
-        server, asset = res.split()[0], res.split()[1]
+        print("server asset e.g. XDUS, BTCLN etc")
+        asset = session.prompt("server asset > ")
         _asset_isser, toml_link = get_stellar_toml(asset)
         token = auth(toml_link=toml_link)
-        # print(token)
         if token is not None:
             data = {
                 "asset_code": asset,
@@ -861,11 +860,10 @@ def withdrawal(text):
                     # print(transaction_details)
                     transaction = transaction_details["transaction"]
                     if transaction["status"] == "pending_user_transfer_start":
-                        print("Transfer started")
-                        # _asset_issuer = get_asset_issuer(asset)
-                        print("asset issuer: " + _asset_issuer)
+                        print("Transfer started...")
+                        # print("asset issuer: " + _asset_issuer)
                         _asset = Asset(asset, _asset_issuer)
-                        print("asset: " + str(_asset))
+                        print("Asset: " + str(_asset))
                         if _asset is None:
                             print("asset not found")
                             return
@@ -896,7 +894,6 @@ def withdrawal(text):
                                     print("Transaction failed, please try again")
                             else:
                                 print("Transaction failed, please try again")
-                            # print(tran_response)
                             break
                 while True:
                     # Continue with transaction
@@ -909,7 +906,7 @@ def withdrawal(text):
                     ).json()
                     transaction = transaction_details["transaction"]
                     if transaction["status"] == "completed":
-                        print(transaction["status"])
+                        print("Transaction completed successfully.")
                         break
                     elif transaction["status"] == "pending_stellar":
                         print("waiting for stellar approval")
@@ -1118,6 +1115,8 @@ def main():
             print("VERSION: " + VERSION)
         elif text[0] == "d" and text[1] == "t":
             direct_transfer()
+        elif text[0] == "t":
+            transactions()
         elif text[0] == "t" and text[1] == "t":
             trust_asset(text)
         elif text[0] == "u" and text[1] == "t":
@@ -1134,8 +1133,6 @@ def main():
             path_payment_send(text)
         elif text[0] == "p" and text[1] == "p" and text[2] == "r":
             path_payment_receive(text)
-        elif text[0] == "t":
-            transactions()
         elif text == "cls":
             if platform.system() == "Windows":
                 os.system("cls")
