@@ -160,8 +160,11 @@ def fund():
 
 def fetch_base_fee():
     try:
-        if CONF["base_fee"] != "":
-            return int(CONF["base_fee"])
+        if "base_fee" in CONF:
+            if CONF["base_fee"] != "":
+                return int(CONF["base_fee"])
+            else:
+                return server().fetch_base_fee()
         else:
             return server().fetch_base_fee()
     except (
