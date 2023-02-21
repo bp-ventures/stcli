@@ -20,11 +20,6 @@ from stellar_sdk.keypair import Keypair
 from stellar_sdk.sep.mnemonic import StellarMnemonic
 from stellar_sdk.transaction_builder import TransactionBuilder
 from stellar_sdk.network import Network
-
-# from multiprocessing import Pool
-
-
-# from stellar_sdk.xdr import SignerKey
 from prompt_toolkit import print_formatted_text, HTML
 
 # optional

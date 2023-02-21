@@ -21,5 +21,6 @@ temp.txt
 *.conf
 *.zip
 *.egg-info
+*.myhistory
 
-/.myhistory
+.vscode/
