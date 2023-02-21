@@ -130,7 +130,7 @@ def create_conf():
         fp.write(
             'public_key = ""\nprivate_key = ""\nnetwork = "TESTNET"\nlanguage '
             '= "ENGLISH"\nstellar_address = ""\nairdrop="t"\npartner_key=""\n'
-            'multisig=""'
+            'multisig=""\nbase_fee="10000"\n'
         )
     load_conf()
     os.chmod(PTC, 0o700)
@@ -160,8 +160,10 @@ def fund():
 
 def fetch_base_fee():
     try:
-        # return server().fetch_base_fee()
-        return 10000
+        if CONF["base_fee"] != "":
+            return int(CONF["base_fee"])
+        else:
+            return server().fetch_base_fee()
     except (
         stellar_exceptions.ConnectionError,
         stellar_exceptions.NotFoundError,
@@ -169,7 +171,7 @@ def fetch_base_fee():
         stellar_exceptions.BadResponseError,
         stellar_exceptions.UnknownRequestError,
     ):
-        return 300
+        return 10000
 
 
 def transaction_builder():
@@ -338,7 +340,7 @@ def print_help():
                 conf - prints configuration
                 cls [clear] - clears the screen
                 q [quit] - quit app
-                set key=var .. e.g. set network=PUBLIC (do not use for private key - use k)
+                set key=var .. e.g. set network=PUBLIC, base_fee=10000 etc (do not use for private key - use k)
                 set multisig=GPUBKEY sets a public key for multisig)
      AUTHOR:
             Put together by Anthony Barker for testing purposes
@@ -398,11 +400,23 @@ def history():
             print("no history")
             return
         else:
+            if len(payments) > 0:
+                print(
+                    "------------------------------------------------------------------------------------------------------"
+                )
+                print("                                         Wallet History")
+                print(
+                    "------------------------------------------------------------------------------------------------------"
+                )
+            count = 1
             for payment in payments:
                 if payment["type"] == "create_account":
                     print(
-                        payment["created_at"]
-                        + " "
+                        " "
+                        + str(count)
+                        + " : "
+                        + payment["created_at"]
+                        + " |"
                         + payment["type"]
                         + " start "
                         + payment["starting_balance"]
@@ -413,7 +427,10 @@ def history():
                     )
                 else:
                     print(
-                        payment["created_at"]
+                        " "
+                        + str(count)
+                        + " : "
+                        + payment["created_at"]
                         + " "
                         + payment["type"]
                         + " "
@@ -427,6 +444,7 @@ def history():
                         + "operations/"
                         + payment["id"]
                     )
+                count += 1
     except Exception as e:
         print(e)
 
