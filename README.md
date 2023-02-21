@@ -52,7 +52,8 @@ stcli --help
 press ? for help
 ```
 
-![stcli help screen](https://user-images.githubusercontent.com/46220827/220281291-feec514c-06f1-46be-beb2-197c89935001.png)
+![stcli help screen](https://user-images.githubusercontent.com/46220827/220284295-f1b963df-a7fc-4fc9-9bad-190c4ef28947.png)
+
 
 
 ## License
