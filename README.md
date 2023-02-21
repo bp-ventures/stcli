@@ -26,14 +26,20 @@ Command line - preferably Linux but MacOS or Windows 10 with Linux should work. 
 - python
 - zip/unzip
 
-## Virtual environment
-Install virtual enviroment 
+## Virtual environment (Optional)
+
+Install, create & activate virtual enviroment on Unix/macOS
 ```
 python3 -m pip install --user virtualenv
-```
-Activate virtual enviroment
-```
 python3 -m venv env
+source env/bin/activate
+```
+
+Install, create & activate virtual enviroment on Windows
+```
+py -m pip install --user virtualenv
+py -m venv env
+.\env\Scripts\activate
 ```
 
 ### Installing STCLI
