@@ -4,8 +4,7 @@ stcli - a repl command line crypto wallet for stellar that is simple and all in 
 
 ## Getting Started
 
-If you have the Ubuntu you may be able to just clone the one file stcli.py
-Everything resides in the one file... it will generate an stcli.conf in the same
+If you have the Ubuntu you may be able to just clone the one file stcli.py. Everything resides in the one file... it will generate an stcli.conf in the same
 directory or an encrypted stcli.zip.
 
 The reason for this tiny app is I wanted a stellar wallet:
@@ -27,30 +26,35 @@ Command line - preferably Linux but MacOS or Windows 10 with Linux should work. 
 - python
 - zip/unzip
 
-### Installing
+## Virtual environment (Optional)
+
+Install, create & activate virtual enviroment on Unix/macOS
+```
+python3 -m pip install --user virtualenv
+python3 -m venv env
+source env/bin/activate
+```
+
+Install, create & activate virtual enviroment on Windows
+```
+py -m pip install --user virtualenv
+py -m venv env
+.\env\Scripts\activate
+```
+
+### Installing STCLI
 
 ```
-git clone https://github.com/antb123/stcli.git
+git clone https://github.com/antb321/stcli.git
 cd stcli
-sudo python3 -m pip install -e stcli/
+python3 -m pip install -e stcli/
 stcli --help
 press ? for help
 ```
 
-![stcli help screen](https://user-images.githubusercontent.com/40919851/42498875-acfbe7ba-842d-11e8-97f5-169bc86a194e.png)
+![stcli help screen](https://user-images.githubusercontent.com/46220827/220284295-f1b963df-a7fc-4fc9-9bad-190c4ef28947.png)
 
-### TODO
 
-- There is a test suite for stellar_base but none for this mini app
-- path payments
-- SEP 007
-- update SEP 006 support
-- integrate chrome for those who want to use a ledger
-- add to pypi
-- make a proper install
-- view order book, buy, sell
-- modules
-- offline
 
 ## License
 
