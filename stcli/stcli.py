@@ -330,6 +330,7 @@ def print_help():
                 f [fund] - fund a testnet address
                 h [history] - history of transactions
                 v [version] - displays version
+                t [transactions] - allows you to check transactions
                 tt [trust] - trust an asset e.g. tt XDUS <asset issuer>
                 ut [untrust] - untrust an asset e.g. ut XDUS <asset issuer>
                 d [deposit] - brings up deposit menu  e.g. EURT (sep 24)
@@ -506,7 +507,7 @@ def get_asset_issuer(asset):
                         + record["asset_issuer"]
                         + ")"
                     )
-                    count += 1
+            count += 1
         if count > 1:
             print(
                 "select one of the above issuers e.g. 1,2 etc or press 0 if you want to provide asset issuer"
@@ -929,8 +930,34 @@ def transactions():
     print("you can also use the stellar.expert explorer")
     print("https://stellar.expert/explorer/public/account/" + CONF["public_key"])
     response = server().transactions().for_account(CONF["public_key"]).limit(10).call()
+    count = 1
+    if len(response["_embedded"]["records"]) > 0:
+        print(
+            "-----------------------------------------------------------------------------------------------"
+        )
     for record in response["_embedded"]["records"]:
-        print(record)
+        print(
+            str(count)
+            + ". ID:"
+            + record["id"]
+            + "  Created:"
+            + record["created_at"]
+            + "  Fee charged:"
+            + record["fee_charged"]
+            + "  Paging Token:"
+            + record["paging_token"]
+            + "  Status: "
+            + str(record["successful"])
+            + "  \n View Details:"
+            + horizon_url()
+            + "transactions/"
+            + record["hash"]
+        )
+        count += 1
+
+
+def check_transaction_status(text):
+    return
 
 
 def server():
