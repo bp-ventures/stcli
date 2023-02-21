@@ -52,7 +52,7 @@ stcli --help
 press ? for help
 ```
 
-![stcli help screen](https://user-images.githubusercontent.com/46220827/220284295-f1b963df-a7fc-4fc9-9bad-190c4ef28947.png)
+![stcli help screen](https://user-images.githubusercontent.com/46220827/220334297-80cae1c3-e028-44cb-8960-e805f2b42c0a.png)
 
 
 
