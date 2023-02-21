@@ -330,12 +330,12 @@ def print_help():
                 f [fund] - fund a testnet address
                 h [history] - history of transactions
                 v [version] - displays version
-                tt [trust] - trust an asset e.g. t XDUS <asset issuer>
-                ut [untrust] - untrust an asset e.g. t XDUS <asset issuer>
+                tt [trust] - trust an asset e.g. tt XDUS <asset issuer>
+                ut [untrust] - untrust an asset e.g. ut XDUS <asset issuer>
                 pps [payment path send] - allows you to send path payments e.g. pps <amount> <asset code> <address>  (in beta) 
                 ppr [payment path recieve] - allows you to recieve with path payments e.g ppr <amount> <asset code> <address> (in beta)
-                deposit - brings up deposit menu  e.g. d tempo.eu.com eurt (sep 24)
-                withdrawal - brings up withdrawal menu w tempo.eu.com eurt (sep 24)
+                deposit - brings up deposit menu  e.g. EURT (sep 24)
+                withdrawal - brings up withdrawal menu e.g. EURT (sep 24)
                 direct transfer - allows you to send direct transfers to a bank account e.g. dt kbtrading.org eurt 10  (sep 31 - in beta)
                 conf - prints configuration
                 cls [clear] - clears the screen
