@@ -64,8 +64,8 @@ def get_stellar_toml(asset, asset_issuer=None):
     if _asset_issuer is not None:
         url = horizon_url()
         _url = url + "accounts/" + _asset_issuer
-        response = requests.get(_url).json()
         try:
+            response = requests.get(_url).json()
             if "home_domain" in response:
                 home_domain = response["home_domain"]
                 if home_domain is not None:
@@ -75,6 +75,9 @@ def get_stellar_toml(asset, asset_issuer=None):
                         ).text
                     )
                     return _asset_issuer, _toml
+            return None, None
+        except requests.exceptions.ConnectionError:
+            print("Connection refused by Horizon server, try again")
             return None, None
         except Exception as e:
             print(e)
@@ -332,11 +335,11 @@ def print_help():
                 v [version] - displays version
                 tt [trust] - trust an asset e.g. tt XDUS <asset issuer>
                 ut [untrust] - untrust an asset e.g. ut XDUS <asset issuer>
-                pps [payment path send] - allows you to send path payments e.g. pps <amount> <asset code> <address>  (in beta) 
+                d [deposit] - brings up deposit menu  e.g. EURT (sep 24)
+                w [withdrawal] - brings up withdrawal menu e.g. EURT (sep 24)
+                dt [direct transfer] - allows you to send direct transfers to a bank account e.g. dt kbtrading.org eurt 10  (sep 31 - in beta)
+                pps [payment path send] - allows you to send path payments e.g. pps <amount> <asset code> <address>  (in beta)
                 ppr [payment path recieve] - allows you to recieve with path payments e.g ppr <amount> <asset code> <address> (in beta)
-                deposit - brings up deposit menu  e.g. EURT (sep 24)
-                withdrawal - brings up withdrawal menu e.g. EURT (sep 24)
-                direct transfer - allows you to send direct transfers to a bank account e.g. dt kbtrading.org eurt 10  (sep 31 - in beta)
                 conf - prints configuration
                 cls [clear] - clears the screen
                 q [quit] - quit app
@@ -449,23 +452,25 @@ def get_balance_issuer(amount, asset):
                 else:
                     return 0, record["asset_issuer"]
     except Exception as e:
-        print("account not found")
+        print(e)
 
 
 def get_home_domain(asset_issuser):
     try:
         url = horizon_url()
         _url = url + "accounts/" + asset_issuser
-        response = requests.get(_url).json()
         try:
+            response = requests.get(_url).json()
             if "home_domain" in response:
                 return response["home_domain"]
             else:
                 return "no home domain"
+        except requests.exceptions.ConnectionError:
+            print("connection refused, try again later")
         except Exception as e:
-            print("no home domain")
+            print(e)
     except Exception as e:
-        print("no home domain")
+        print(e)
 
 
 def get_asset_issuer(asset):
@@ -520,26 +525,15 @@ def send_asset(text):
         print("no private key setup  - pls type set to set key or c to create wallet")
         return
     val = text.split()
-    memo_type = "text"
+
     if len(val) < 3:
         print(
-            "invalid syntax please use send amount asset receiver e.g.  s 10 EURT antb123*papayame.com"
+            "invalid syntax please use send amount asset receiver e.g.  s 10 EURT <destination account>"
         )
         return
-    amount, asset, address = val[1], val[2].upper(), val[3]
+    amount, asset, sendto = val[1], val[2].upper(), val[3]
     print(amount)
-    if "*" in address:
-        res = fed(address.split("*")[1], address)
-        sendto = res["account_id"]
-        try:
-            memo = res["memo"]
-            memo_type = res["memo_type"]
-        except Exception:
-            memo = ""
-            memo_type = ""
-    else:
-        sendto = address
-        memo = ""
+
     # override memo, type if given
     if len(val) == 6:
         memo = val[4]
@@ -642,7 +636,6 @@ def path_payment_send(text):
         print("no private key setup  - pls type set to set key or c to create wallet")
         return
     val = text.split()
-    memo_type = "text"
     if len(val) < 3:
         print(
             "invalid syntax please use pp <amount> <source asset> <destination address> e.g.  pps 10 EURT antb123*papayame.com"
@@ -704,7 +697,6 @@ def path_payment_receive(text):
         print("no private key setup  - pls type set to set key or c to create wallet")
         return
     val = text.split()
-    memo_type = "text"
     if len(val) < 3:
         print(
             "invalid syntax please use pp <amount> <destination asset> <source address> e.g.  s 10 EURT BTCLN antb123*papayame.com"
@@ -1001,63 +993,83 @@ def trust_asset(text):
 def direct_transfer():
     print_formatted_text(HTML("<ansiblue>\n### DIRECT TRANSFER ###</ansiblue>\n"))
     print("direct transfer allows you to send assets to another account")
-    print("direct transfer e.g. kbtrading.org eurt 10")
+    print("direct transfer e.g. EURT 10")
     res = session.prompt("direct transfer> ")
     rlen = res.split()
-    if len(rlen) > 2:
+    if len(rlen) > 1:
+        asset, amount = res.split()[0], res.split()[1]
         try:
-            server, asset, amount = res.split()[0], res.split()[1], res.split()[2]
             if asset is not None:
-                print("Authencating with " + server + "...")
                 _asset_issuer, toml_link = get_stellar_toml(asset=asset)
                 token = auth(toml_link=toml_link)
+                # print(token)
                 if token is not None:
-                    if toml_link["DIRECT_PAYMENT_SERVER"] is not None:
-                        remitter_email = session.prompt("remitter email> ")
-                        remitter_first_name = session.prompt("remitter_first_name> ")
-                        remitter_last_name = session.prompt("remitter_last_name> ")
-                        remitter_phone_number = session.prompt(
-                            "remitter_phone_number> "
-                        )
-                        beneficiary_email = session.prompt("beneficiary_email> ")
-                        beneficiary_first_name = session.prompt(
-                            "beneficiary_first_name> "
-                        )
-                        beneficiary_last_name = session.prompt(
-                            "beneficiary_last_name> "
-                        )
-                        beneficiary_bank_iban = session.prompt(
-                            "beneficiary_bank_iban> "
-                        )
-                        beneficiary_bank_bic = session.prompt("beneficiary_bank_bic> ")
-                        beneficiary_phone_number = session.prompt(
-                            "beneficiary_phone_number> "
-                        )
-                        payload = {
-                            "amount": amount,
-                            "asset_code": asset,
-                            "fields": {
-                                "transaction": {
-                                    "remitter_email": remitter_email,
-                                    "remitter_first_name": remitter_first_name,
-                                    "remitter_last_name": remitter_last_name,
-                                    "remitter_phone_number": remitter_phone_number,
-                                    "beneficiary_email": beneficiary_email,
-                                    "beneficiary_first_name": beneficiary_first_name,
-                                    "beneficiary_last_name": beneficiary_last_name,
-                                    "beneficiary_bank_iban": beneficiary_bank_iban,
-                                    "beneficiary_bank_bic": beneficiary_bank_bic,
-                                    "beneficiary_phone_number": beneficiary_phone_number,
-                                }
-                            },
-                        }
-                        print(payload)
-                        headers = {"Authorization": "Bearer " + token}
-                        url = toml_link["DIRECT_PAYMENT_SERVER"] + "/transactions"
-                        response = requests.post(
-                            url, json=payload, headers=headers
-                        ).json()
-                        print(response)
+                    if "DIRECT_PAYMENT_SERVER" in toml_link:
+                        if toml_link["DIRECT_PAYMENT_SERVER"] is not None:
+                            # remitter_email = session.prompt("remitter email> ")
+                            # remitter_first_name = session.prompt(
+                            #     "remitter_first_name> "
+                            # )
+                            # remitter_last_name = session.prompt("remitter_last_name> ")
+                            # remitter_phone_number = session.prompt(
+                            #     "remitter_phone_number> "
+                            # )
+                            # beneficiary_email = session.prompt("beneficiary_email> ")
+                            # beneficiary_first_name = session.prompt(
+                            #     "beneficiary_first_name> "
+                            # )
+                            # beneficiary_last_name = session.prompt(
+                            #     "beneficiary_last_name> "
+                            # )
+                            # beneficiary_bank_iban = session.prompt(
+                            #     "beneficiary_bank_iban> "
+                            # )
+                            # beneficiary_bank_bic = session.prompt(
+                            #     "beneficiary_bank_bic> "
+                            # )
+                            # beneficiary_phone_number = session.prompt(
+                            #     "beneficiary_phone_number> "
+                            # )
+                            payload = {
+                                "amount": amount,
+                                "asset_code": asset,
+                                "fields": {
+                                    # "transaction": {
+                                    #     "remitter_email": remitter_email,
+                                    #     "remitter_first_name": remitter_first_name,
+                                    #     "remitter_last_name": remitter_last_name,
+                                    #     "remitter_phone_number": remitter_phone_number,
+                                    #     "beneficiary_email": beneficiary_email,
+                                    #     "beneficiary_first_name": beneficiary_first_name,
+                                    #     "beneficiary_last_name": beneficiary_last_name,
+                                    #     "beneficiary_bank_iban": beneficiary_bank_iban,
+                                    #     "beneficiary_bank_bic": beneficiary_bank_bic,
+                                    #     "beneficiary_phone_number": beneficiary_phone_number,
+                                    # }
+                                    "transaction": {
+                                        "remitter_email": "qaisar@test.com",
+                                        "remitter_first_name": "test",
+                                        "remitter_last_name": "test",
+                                        "remitter_phone_number": "123456789",
+                                        "beneficiary_email": "chris@test.com",
+                                        "beneficiary_first_name": "chris",
+                                        "beneficiary_last_name": "larson",
+                                        "beneficiary_bank_iban": "123456789",
+                                        "beneficiary_bank_bic": "123",
+                                        "beneficiary_phone_number": "123456789",
+                                    }
+                                },
+                            }
+                            print(payload)
+                            headers = {"Authorization": "Bearer " + token}
+                            url = toml_link["DIRECT_PAYMENT_SERVER"] + "/transactions"
+                            response = requests.post(
+                                url, json=payload, headers=headers
+                            ).json()
+                            print(response)
+                        else:
+                            print("Direct Payment not supported for " + asset)
+                            return
                     else:
                         print("Direct Payment not supported for " + asset)
                         return
