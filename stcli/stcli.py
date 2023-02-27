@@ -1,5 +1,7 @@
 #!/usr/bin/python3
 from __future__ import unicode_literals, print_function
+import base64
+import time
 import webbrowser
 import requests
 import json
@@ -18,7 +20,6 @@ from stellar_sdk.keypair import Keypair
 from stellar_sdk.sep.mnemonic import StellarMnemonic
 from stellar_sdk.transaction_builder import TransactionBuilder
 from stellar_sdk.network import Network
-from stellar_sdk.xdr import SignerKey
 from prompt_toolkit import print_formatted_text, HTML
 
 # optional
@@ -47,9 +48,37 @@ compl = WordCompleter(
 )
 session = PromptSession(history=FileHistory(".myhistory"))
 VERSION = "0.1.5"
-stellar_toml = toml.loads(
-    requests.get("https://clpx.finance/.well-known/stellar.toml").text
-)
+
+
+def get_stellar_toml(asset, asset_issuer=None):
+    if asset_issuer is None:
+        print("Fetching asset issuer from Stellar Horizon...")
+        _asset_issuer = get_asset_issuer(asset)
+    else:
+        _asset_issuer = asset_issuer
+    if _asset_issuer is not None:
+        url = horizon_url()
+        _url = url + "accounts/" + _asset_issuer
+        try:
+            response = requests.get(_url).json()
+            if "home_domain" in response:
+                home_domain = response["home_domain"]
+                if home_domain is not None:
+                    _toml = toml.loads(
+                        requests.get(
+                            "https://" + home_domain + "/.well-known/stellar.toml"
+                        ).text
+                    )
+                    return _asset_issuer, _toml
+            return None, None
+        except requests.exceptions.ConnectionError:
+            print("Connection refused by Horizon server, try again")
+            return None, None
+        except Exception as e:
+            print(e)
+            return None, None
+    else:
+        return None, None
 
 
 def load_conf():
@@ -101,7 +130,7 @@ def create_conf():
         fp.write(
             'public_key = ""\nprivate_key = ""\nnetwork = "TESTNET"\nlanguage '
             '= "ENGLISH"\nstellar_address = ""\nairdrop="t"\npartner_key=""\n'
-            'multisig=""'
+            'multisig=""\nbase_fee="10000"\n'
         )
     load_conf()
     os.chmod(PTC, 0o700)
@@ -131,7 +160,13 @@ def fund():
 
 def fetch_base_fee():
     try:
-        return server().fetch_base_fee()
+        if "base_fee" in CONF:
+            if CONF["base_fee"] != "":
+                return int(CONF["base_fee"])
+            else:
+                return server().fetch_base_fee()
+        else:
+            return server().fetch_base_fee()
     except (
         stellar_exceptions.ConnectionError,
         stellar_exceptions.NotFoundError,
@@ -139,29 +174,46 @@ def fetch_base_fee():
         stellar_exceptions.BadResponseError,
         stellar_exceptions.UnknownRequestError,
     ):
-        return 300
+        return 10000
 
 
 def transaction_builder():
     account = server().load_account(CONF["public_key"])
-    # asset = Asset(asset_code, CONF["public_key"])
-    return (
-        TransactionBuilder(
-            source_account=account,
-            network_passphrase=network_passphrase(),
-            base_fee=fetch_base_fee(),
-        )
-        # .append_change_trust_op(asset=asset)
-        .set_timeout(30)
-    )
+    return TransactionBuilder(
+        source_account=account,
+        network_passphrase=network_passphrase(),
+        base_fee=fetch_base_fee(),
+    ).set_timeout(30)
 
 
 def set_account(settype, var1):
-    return
+    print("set account")
+    builder = transaction_builder()
+    if settype == "inflation":
+        builder.append_set_options_op(inflation_dest=var1)
+    else:
+        builder.append_set_options_op(home_domain=var1)
+    envelope = builder.build()
+    envelope.sign(keypair())
+    server().submit_transaction(envelope)
 
 
 def set_var(text):
-    return
+    cmd = text.split()
+    var = cmd[1].split("=")
+    if var[0] in ["inflation", "home_domain"]:
+        set_account(var[0], var[1])
+        return
+    if var[0] in ["multisig"]:
+        set_multisig(var[1])
+    if len(var) < 2:
+        print("format is set var=val")
+        return
+    print(text)
+    CONF[var[0]] = var[1]
+    with open(PTC, "w") as fp:
+        fp.write(toml.dumps(CONF))
+    list_balances()
 
 
 def create_wallet():
@@ -218,30 +270,41 @@ def list_balances(check_asset=""):
         )
         return
 
-    r = requests.get("https://api.kraken.com/0/public/Ticker?pair=BTCEUR,XLMEUR,ETHEUR")
-    data = r.json()["result"]
+    res = requests.get(
+        "https://api.kraken.com/0/public/Ticker?pair=BTCEUR,XLMEUR,ETHEUR"
+    )
+    data = res.json()["result"]
     price_eur = data["XXLMZEUR"]["c"][0]
     #  print('.. rate ' + str(rate))
-    for x in account["balances"]:
-        if x["asset_type"] == "native":
+    for record in account["balances"]:
+        if (
+            record["asset_type"] == "native"
+            or record["asset_type"] == "liquidity_pool_shares"
+        ):
             if check_asset != "":
                 continue
-            eur_val = float(price_eur) * float(x["balance"])
+            eur_val = float(price_eur) * float(record["balance"])
             print_formatted_text(
                 HTML(
                     "XLM: <ansiblue>"
-                    + x["balance"]
+                    + record["balance"]
                     + "</ansiblue> EUR:"
                     + "{:.2f}".format(eur_val)
                 )
             )
         else:
             if check_asset != "":
-                if check_asset.upper() == x["asset_code"].upper():
+                if check_asset.upper() == record["asset_code"].upper():
                     return True
             else:
                 print_formatted_text(
-                    HTML(x["asset_code"] + " <ansiblue>" + x["balance"] + "</ansiblue>")
+                    HTML(
+                        record["asset_code"]
+                        + " <ansiblue>"
+                        + record["balance"]
+                        + "</ansiblue> EUR:"
+                        + "{:.2f}".format(float(price_eur) * float(record["balance"]))
+                    )
                 )
     if check_asset != "":
         return False
@@ -254,45 +317,6 @@ def network_passphrase():
         return Network.TESTNET_NETWORK_PASSPHRASE
 
 
-def trust_asset(text):
-    if CONF["private_key"] == "":
-        print("no private key setup  - use set to set key or c to create wallet")
-        return
-    val = text.split(" ")
-    if len(val) != 3:
-        if val[0][0] == "t":
-            print("invalid syntax please use trust <issuer pubkey> <asset code>")
-        else:
-            print("invalid syntax please use untrust <issuer pubkey> <asset code>")
-        return
-    asset_issuer = val[1]
-    asset_code = val[2]
-
-    builder = transaction_builder()
-    asset_info = stellar_toml["CURRENCIES"][0]
-    _asset = Asset(asset_info["code"], asset_info["issuer"])
-    if val[0][0] == "t":
-        print("trusting asset_code=" + asset_code + " issuer=" + asset_issuer)
-        builder.append_change_trust_op(_asset)
-    else:
-        print(
-            "untrusting asset_code="
-            + asset_code
-            + " issuer="
-            + asset_issuer
-            + ", please ensure your balance is 0 before this operation"
-        )
-        builder.append_change_trust_op(_asset, limit="0")
-    try:
-        envelope = builder.build()
-        envelope.sign(keypair())
-        response = server().submit_transaction(envelope)
-        return response["successful"]
-    except Exception as e:
-        print(e)
-        return
-
-
 def print_help():
     print(
         """
@@ -300,23 +324,27 @@ def print_help():
            stcli - a repl command line crypto wallet for stellar that is simple and all in one file
     SYNOPSIS
             DESCRIPTION
-                                                     COMMAND OPTIONS
+                                            COMMAND OPTIONS
                 r [receive] - displays the public key and or federated address
-                s [send] amount asset address memo [text|id] e.g. s 1 XLM antb123*papayame.com
+                s [send] amount asset address memo [text|id] e.g. s 1 XLM <address>
                 b [balances] - shows the balances of all assets
                 c [create] - creates a new private and public keypair
                 k [key] - sets private key
                 f [fund] - fund a testnet address
                 h [history] - history of transactions
                 v [version] - displays version
-                pp [paymentpath] - allows you to play with path payments (in beta)
+                t [transactions] - allows you to check transactions
+                tt [trust] - trust an asset e.g. tt XDUS <asset issuer>
+                ut [untrust] - untrust an asset e.g. ut XDUS <asset issuer>
+                d [deposit] - brings up deposit menu  e.g. EURT (sep 24)
+                w [withdrawal] - brings up withdrawal menu e.g. EURT (sep 24)
+                dt [direct transfer] - allows you to send direct transfers to a bank account e.g. dt kbtrading.org eurt 10  (sep 31 - in beta)
+                pps [payment path send] - allows you to send path payments e.g. pps <amount> <asset code> <address>  (in beta)
+                ppr [payment path recieve] - allows you to recieve with path payments e.g ppr <amount> <asset code> <address> (in beta)
+                conf - prints configuration
                 cls [clear] - clears the screen
                 q [quit] - quit app
-                deposit - brings up deposit menu  e.g. d tempo.eu.com eurt
-                withdrawal - brings up withdrawal menu w tempo.eu.com eurt
-                conf - prints configuration
-                set key=var .. e.g. set network=PUBLIC (do not use for private key - use k)
-                set inflation=tempo.eu.como not use for private key - use k)
+                set key=var .. e.g. set network=PUBLIC, base_fee=10000 etc (do not use for private key - use k)
                 set multisig=GPUBKEY sets a public key for multisig)
      AUTHOR:
             Put together by Anthony Barker for testing purposes
@@ -358,9 +386,9 @@ def fed(domain, address):
     )
     data = {"q": address, "type": "name"}
     print("getting federation with " + FED["FEDERATION_SERVER"] + " " + address)
-    r = requests.get(url=FED["FEDERATION_SERVER"], params=data)
-    print(r.text)
-    return r.json()
+    response = requests.get(url=FED["FEDERATION_SERVER"], params=data)
+    print(response.text)
+    return response.json()
 
 
 def history():
@@ -376,35 +404,51 @@ def history():
             print("no history")
             return
         else:
-            for x in payments:
-                if x["type"] == "create_account":
+            if len(payments) > 0:
+                print(
+                    "------------------------------------------------------------------------------------------------------"
+                )
+                print("                                         Wallet History")
+                print(
+                    "------------------------------------------------------------------------------------------------------"
+                )
+            count = 1
+            for payment in payments:
+                if payment["type"] == "create_account":
                     print(
-                        x["created_at"]
-                        + " "
-                        + x["type"]
+                        " "
+                        + str(count)
+                        + " : "
+                        + payment["created_at"]
+                        + " |"
+                        + payment["type"]
                         + " start "
-                        + x["starting_balance"]
+                        + payment["starting_balance"]
                         + "\n"
                         + horizon_url()
                         + "operations/"
-                        + x["id"]
+                        + payment["id"]
                     )
                 else:
                     print(
-                        x["created_at"]
+                        " "
+                        + str(count)
+                        + " : "
+                        + payment["created_at"]
                         + " "
-                        + x["type"]
+                        + payment["type"]
                         + " "
-                        + x["to"]
+                        + payment["to"]
                         + " "
-                        + x["from"]
+                        + payment["from"]
                         + " "
-                        + x["amount"]
+                        + payment["amount"]
                         + "\n"
                         + horizon_url()
                         + "operations/"
-                        + x["id"]
+                        + payment["id"]
                     )
+                count += 1
     except Exception as e:
         print(e)
 
@@ -414,15 +458,82 @@ def get_balance_issuer(amount, asset):
         return 0, ""
     try:
         account = server().accounts().account_id(CONF["public_key"]).call()
-        for b in account["balances"]:
-            if asset == b["asset_code"]:
-                if float(b["balance"]) < float(amount):
+        for record in account["balances"]:
+            if (
+                asset == record["asset_code"]
+                or record["asset_type"] == "liquidity_pool_shares"
+            ):
+                if float(record["balance"]) < float(amount):
                     print("error insufficient funds")
-                    return 1, b["asset_issuer"]
+                    return 1, record["asset_issuer"]
                 else:
-                    return 0, b["asset_issuer"]
+                    return 0, record["asset_issuer"]
     except Exception as e:
-        print("account not found")
+        print(e)
+
+
+def get_home_domain(asset_issuser):
+    try:
+        url = horizon_url()
+        _url = url + "accounts/" + asset_issuser
+        try:
+            response = requests.get(_url).json()
+            if "home_domain" in response:
+                return response["home_domain"]
+            else:
+                return "no home domain"
+        except requests.exceptions.ConnectionError:
+            print("connection refused, try again later")
+        except Exception as e:
+            print(e)
+    except Exception as e:
+        print(e)
+
+
+def get_asset_issuer(asset):
+    try:
+        account = server().accounts().account_id(CONF["public_key"]).call()
+        count = 1
+        for record in account["balances"]:
+            if (
+                record["asset_type"] == "liquidity_pool_shares"
+                or record["asset_type"] == "native"
+            ):
+                continue
+            else:
+                if asset == record["asset_code"]:
+                    print(
+                        str(count)
+                        + ": "
+                        + get_home_domain(record["asset_issuer"])
+                        + "  ("
+                        + record["asset_issuer"]
+                        + ")"
+                    )
+            count += 1
+        if count > 1:
+            print(
+                "select one of the above issuers e.g. 1,2 etc or press 0 if you want to provide asset issuer"
+            )
+            res = session.prompt("select assset issuer > ")
+            try:
+                if int(res) == 0:
+                    return session.prompt("provide asset issuer > ")
+                elif int(res) in range(count):
+                    return account["balances"][int(res)]["asset_issuer"]
+            except Exception as e:
+                print(e)
+        else:
+            print("no asset issuer found")
+            res = session.prompt("want to provide asset issuer? y/n > ")
+            if res == "y":
+                return session.prompt("provide asset issuer > ")
+            else:
+                return None
+        return None
+    except Exception as e:
+        print(e)
+    return None
 
 
 def send_asset(text):
@@ -431,26 +542,15 @@ def send_asset(text):
         print("no private key setup  - pls type set to set key or c to create wallet")
         return
     val = text.split()
-    memo_type = "text"
+
     if len(val) < 3:
         print(
-            "invalid syntax please use send amount asset receiver e.g.  s 10 EURT antb123*papayame.com"
+            "invalid syntax please use send amount asset receiver e.g.  s 10 EURT <destination account>"
         )
         return
-    amount, asset, address = val[1], val[2].upper(), val[3]
+    amount, asset, sendto = val[1], val[2].upper(), val[3]
     print(amount)
-    if "*" in address:
-        res = fed(address.split("*")[1], address)
-        sendto = res["account_id"]
-        try:
-            memo = res["memo"]
-            memo_type = res["memo_type"]
-        except Exception:
-            memo = ""
-            memo_type = ""
-    else:
-        sendto = address
-        memo = ""
+
     # override memo, type if given
     if len(val) == 6:
         memo = val[4]
@@ -471,7 +571,10 @@ def send_asset(text):
     text = session.prompt("> ", default="y")
     if text != "y":
         return
-    ret, asset_issuer = get_balance_issuer(amount, asset)
+    try:
+        ret, asset_issuer = get_balance_issuer(amount, asset)
+    except Exception as e:
+        return e
     if ret:
         return
     # retsan = send_sanity(sendto, memo_type, asset)
@@ -545,8 +648,125 @@ def start_app():
         list_balances()
 
 
-def path_payment(text):
-    print("..checking path payment options not yet implemented")
+def path_payment_send(text):
+    if CONF["private_key"] == "":
+        print("no private key setup  - pls type set to set key or c to create wallet")
+        return
+    val = text.split()
+    if len(val) < 3:
+        print(
+            "invalid syntax please use pp <amount> <source asset> <destination address> e.g.  pps 10 EURT antb123*papayame.com"
+        )
+        return
+    amount, s_asset, address = val[1], val[2].upper(), val[3]
+    ret, asset_issuer = get_balance_issuer(amount, s_asset)
+    if ret:
+        return
+    if len(s_asset) < 5:
+        sstype = "credit_alphanum4"
+    else:
+        sstype = "credit_alphanum12"
+    _url = (
+        horizon_url()
+        + "paths/strict-send?destination_account="
+        + address
+        + "&source_asset_code="
+        + s_asset
+        + "&source_asset_type="
+        + sstype
+        + "&source_amount="
+        + amount
+        + "&source_asset_issuer="
+        + asset_issuer
+    )
+    response = requests.get(_url)
+    if response.status_code == 200:
+        data = response.json()
+        if len(data["_embedded"]["records"]) == 0:
+            print("no path found")
+            return
+        record = data["_embedded"]["records"][0]
+        print("best path found")
+        print(record)
+        _asset = Asset(
+            record["destination_asset_code"], record["destination_asset_issuer"]
+        )
+        builder = transaction_builder()
+        builder.append_payment_op(address, _asset, record["destination_amount"])
+        try:
+            envelope = builder.build()
+            if CONF["multisig"] != "":
+                print(
+                    "You have 2of2 multisig - send this data to the other key to sign when you get it back type signsend data"
+                )
+                print(envelope.to_xdr())
+                return
+            envelope.sign(keypair())
+            print(server().submit_transaction(envelope))
+        except Exception as e:
+            print("error: " + e)
+    else:
+        print("error: " + str(response.status_code))
+
+
+def path_payment_receive(text):
+    if CONF["private_key"] == "":
+        print("no private key setup  - pls type set to set key or c to create wallet")
+        return
+    val = text.split()
+    if len(val) < 3:
+        print(
+            "invalid syntax please use pp <amount> <destination asset> <source address> e.g.  s 10 EURT BTCLN antb123*papayame.com"
+        )
+        return
+    amount, d_asset, address = val[1], val[2].upper(), val[3]
+    ret, asset_issuer = get_balance_issuer(amount, d_asset)
+    if ret:
+        return
+    # _asset = Asset(s_asset, asset_issuer)
+    if len(d_asset) < 5:
+        dstype = "credit_alphanum4"
+    else:
+        dstype = "credit_alphanum12"
+    _url = (
+        horizon_url()
+        + "paths/strict-receive?source_account="
+        + address
+        + "&destination_asset_code="
+        + d_asset
+        + "&destination_asset_type="
+        + dstype
+        + "&destination_amount="
+        + amount
+        + "&destination_asset_issuer="
+        + asset_issuer
+    )
+    response = requests.get(_url)
+    if response.status_code == 200:
+        data = response.json()
+        if len(data["_embedded"]["records"]) == 0:
+            print("no path found")
+            return
+        record = data["_embedded"]["records"][0]
+        print("best path found")
+        print(record)
+        _asset = Asset(record["source_asset_code"], record["source_asset_issuer"])
+        builder = transaction_builder()
+        builder.append_payment_op(address, _asset, record["source_amount"])
+        try:
+            envelope = builder.build()
+            if CONF["multisig"] != "":
+                print(
+                    "You have 2of2 multisig - send this data to the other key to sign when you get it back type signsend data"
+                )
+                print(envelope.to_xdr())
+                return
+            envelope.sign(keypair())
+            print(server().submit_transaction(envelope))
+        except Exception as e:
+            print("error: " + e)
+    else:
+        print("error: " + str(response.status_code))
 
 
 def deposit(text):
@@ -554,31 +774,38 @@ def deposit(text):
     print(
         "Deposit servers allow you to cash in assets into your wallet. We support naobtc.com, apay.io and tempo.eu.com"
     )
-    print("you need to trust the asset before depositing.. eg. trust api.io BCH")
-    r = text.split()
-    if len(r) > 2:
-        server = text.split()[1]
-        asset = text.split()[2].upper()
-        print("deposit to " + server + " asset " + asset)
+    print("you need to trust the asset before depositing.. eg. BTCLN")
+    res = text.split()
+    if len(res) > 1:
+        asset = text.split()[1]
     else:
-        print("server asset e.g. apay.io bch or naobtc.com btc")
-        res = session.prompt("server asset > ")
-        server, asset = res.split()[0], res.split()[1]
-        token = auth(server=server)
-        # print("token is " + token)
-        _trust = trustline()
-        # print(_trust)
-        data = {
-            "asset_code": asset,
-            "account": CONF["public_key"],
-        }
-        headers = {"Authorization": "Bearer " + token}
-        url = (
-            stellar_toml["TRANSFER_SERVER_SEP0024"]
-            + "/transactions/deposit/interactive"
-        )
-        response = requests.post(url, data=data, headers=headers).json()
-        webbrowser.open(response["url"], new=0, autoraise=True)
+        print("server asset e.g. XDUS, BTCLN etc")
+        asset = session.prompt("server asset > ")
+        _asset_isser, toml_link = get_stellar_toml(asset)
+        token = auth(toml_link=toml_link)
+        if token is not None:
+            data = {
+                "asset_code": asset,
+                "account": CONF["public_key"],
+            }
+            headers = {"Authorization": "Bearer " + token}
+            if toml_link is None:
+                print("no toml link found for " + asset)
+                return
+            else:
+                url = (
+                    toml_link["TRANSFER_SERVER_SEP0024"]
+                    + "/transactions/deposit/interactive"
+                )
+                response = requests.post(url, data=data, headers=headers).json()
+                webbrowser.open(response["url"], new=0, autoraise=True)
+
+        else:
+            print("Auth server not found for " + asset)
+            return
+
+        transaction_id = response["id"]
+        print("transaction id: " + transaction_id)
 
 
 def set_multisig(trusted_key):
@@ -601,29 +828,139 @@ def withdrawal(text):
     print(
         "withdrawal allows you to remove assets from your wallet such as EUR, BCH, BTC"
     )
-    r = text.split()
-    if len(r) > 2:
-        server = text.split()[1]
-        asset = text.split()[2]
+    res = text.split()
+    if len(res) > 1:
+        asset = text.split()[1]
     else:
-        print("server asset e.g. tempo.eucom eurt, apay.io bch or naobtc.com btc")
-        res = session.prompt("server asset> ")
-        try:
-            server, asset = res.split()[0], res.split()[1]
-        except Exception:
-            print("format error")
-            return
-    token = auth(server=server)
-    _trust = trustline()
-    # print("Trustline: " + _trust)
-    data = {
-        "asset_code": asset,
-    }
-    headers = {"Authorization": "Bearer " + token}
-    url = stellar_toml["TRANSFER_SERVER_SEP0024"] + "/transactions/withdraw/interactive"
-    response = requests.post(url, data=data, headers=headers).json()
-    print(response)
-    webbrowser.open(response["url"], new=0, autoraise=True)
+        print("server asset e.g. BTCLN or XDUS")
+        asset = session.prompt("enter asset> ")
+    if asset is not None:
+        _asset_issuer, toml_link = get_stellar_toml(asset=asset)
+        if toml_link is not None:
+            token = auth(toml_link=toml_link)
+            if token is not None:
+                data = {
+                    "asset_code": asset,
+                }
+                headers = {"Authorization": "Bearer " + token}
+
+                url = (
+                    toml_link["TRANSFER_SERVER_SEP0024"]
+                    + "/transactions/withdraw/interactive"
+                )
+                response = requests.post(url, data=data, headers=headers).json()
+                # print(response)
+                webbrowser.open(response["url"], new=0, autoraise=True)
+                transaction_id = response["id"]
+                print("transaction id: " + transaction_id)
+
+                # sep 24 withdrawal transaction flow
+                print("pending user transfer start")
+                print("waiting for user to start transfer")
+                print("Transaction Status update: Please wait...")
+                while True:
+                    time.sleep(5)
+                    transaction_details = requests.get(
+                        toml_link["TRANSFER_SERVER_SEP0024"]
+                        + "/transaction?id="
+                        + transaction_id,
+                        headers=headers,
+                    ).json()
+                    # print(transaction_details)
+                    transaction = transaction_details["transaction"]
+                    if transaction["status"] == "pending_user_transfer_start":
+                        print("Transfer started...")
+                        # print("asset issuer: " + _asset_issuer)
+                        _asset = Asset(asset, _asset_issuer)
+                        print("Asset: " + str(_asset))
+                        if _asset is None:
+                            print("asset not found")
+                            return
+                        else:
+                            builder = transaction_builder()
+                            if transaction["withdraw_memo_type"] == "text":
+                                builder.add_text_memo(transaction["withdraw_memo"])
+                            elif transaction["withdraw_memo_type"] == "id":
+                                builder.add_id_memo(transaction["withdraw_memo"])
+                            elif transaction["withdraw_memo_type"] == "hash":
+                                builder.add_hash_memo(
+                                    base64.b64decode(transaction["withdraw_memo"])
+                                )
+                            builder.append_payment_op(
+                                destination=transaction["withdraw_anchor_account"],
+                                asset=_asset,
+                                amount=transaction["amount_in"],
+                            )
+                            envelope = builder.build()
+                            envelope.sign(keypair())
+                            tran_response = server().submit_transaction(envelope)
+                            if "successful" in tran_response:
+                                if tran_response["successful"] is True:
+                                    print(
+                                        "Transaction successful, now waiting for anchor/external approval"
+                                    )
+                                else:
+                                    print("Transaction failed, please try again")
+                            else:
+                                print("Transaction failed, please try again")
+                            break
+                while True:
+                    # Continue with transaction
+                    time.sleep(5)
+                    transaction_details = requests.get(
+                        toml_link["TRANSFER_SERVER_SEP0024"]
+                        + "/transaction?id="
+                        + transaction_id,
+                        headers=headers,
+                    ).json()
+                    transaction = transaction_details["transaction"]
+                    if transaction["status"] == "completed":
+                        print("Transaction completed successfully.")
+                        break
+                    elif transaction["status"] == "pending_stellar":
+                        print("waiting for stellar approval")
+            else:
+                print("Auth server not found for " + asset)
+        else:
+            print("no toml found for (" + asset + ") with your selected asset issuer")
+    else:
+        print("enter valid asset")
+
+
+def transactions():
+    print_formatted_text(HTML("<ansiblue>\n### TRANSACTIONS ###</ansiblue>\n"))
+    print("transactions will show you the last 10 transactions")
+    print("you can also use the stellar.expert explorer")
+    print("https://stellar.expert/explorer/public/account/" + CONF["public_key"])
+    response = server().transactions().for_account(CONF["public_key"]).limit(10).call()
+    count = 1
+    if len(response["_embedded"]["records"]) > 0:
+        print(
+            "-----------------------------------------------------------------------------------------------"
+        )
+    for record in response["_embedded"]["records"]:
+        print(
+            str(count)
+            + ". ID:"
+            + record["id"]
+            + "  Created:"
+            + record["created_at"]
+            + "  Fee charged:"
+            + record["fee_charged"]
+            + "  Paging Token:"
+            + record["paging_token"]
+            + "  Status: "
+            + str(record["successful"])
+            + "  \n View Details:"
+            + horizon_url()
+            + "transactions/"
+            + record["hash"]
+        )
+        count += 1
+
+
+def check_transaction_status(text):
+    return
 
 
 def server():
@@ -638,45 +975,55 @@ def sys_exit():
     sys.exit()
 
 
-def fetch_stellar_toml(server):
-    return toml.loads(
-        requests.get("https://" + server + "/.well-known/stellar.toml").text
-    )
+def auth(toml_link):
+    try:
+        # if toml_link is None:
+        #     _asset_issuer, toml_link = get_stellar_toml(asset=asset)
+        # print(toml_link)
+        if toml_link is not None:
+            auth_url = toml_link["WEB_AUTH_ENDPOINT"]
+            # get challenge transaction and sign it
+            client_signing_key = Keypair.from_secret(CONF["private_key"])
+            response = requests.get(
+                f"{auth_url}?account={client_signing_key.public_key}"
+            )
+            content = json.loads(response.content)
+            envelope_xdr = content["transaction"]
+            envelope_object = TransactionEnvelope.from_xdr(
+                envelope_xdr, network_passphrase=network_passphrase()
+            )
+            envelope_object.sign(client_signing_key)
+            client_signed_envelope_xdr = envelope_object.to_xdr()
+            # submit the signed transaction to prove ownership of the account
+            response = requests.post(
+                auth_url,
+                json={"transaction": client_signed_envelope_xdr},
+            )
+            content = json.loads(response.content)
+            token = content["token"]
+            return token
+        else:
+            return None
+    except Exception as e:
+        print(e)
+        return None
 
 
-def auth(server):
-    stellar_toml = fetch_stellar_toml(server)
-    auth_url = stellar_toml["WEB_AUTH_ENDPOINT"]
-
-    # get challenge transaction and sign it
-    client_signing_key = Keypair.from_secret(CONF["private_key"])
-    response = requests.get(f"{auth_url}?account={client_signing_key.public_key}")
-    content = json.loads(response.content)
-    envelope_xdr = content["transaction"]
-    envelope_object = TransactionEnvelope.from_xdr(
-        envelope_xdr, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE
-    )
-    envelope_object.sign(client_signing_key)
-    client_signed_envelope_xdr = envelope_object.to_xdr()
-    # submit the signed transaction to prove ownership of the account
-    response = requests.post(
-        auth_url,
-        json={"transaction": client_signed_envelope_xdr},
-    )
-    content = json.loads(response.content)
-    token = content["token"]
-    return token
-
-
-def trustline():
+def trust_asset(text):
+    val = text.split()
+    asset, asset_issuer = val[1], val[2]
     print("Adding trustline to the asset issuer...")
     private_key = CONF["private_key"]
     url = Server(horizon_url=horizon_url())
-    asset_info = stellar_toml["CURRENCIES"][0]
+    _asset_issuer, toml_link = get_stellar_toml(asset=asset, asset_issuer=asset_issuer)
+    if "CURRENCIES" not in toml_link:
+        print("Asset not found")
+        return
+    asset_info = toml_link["CURRENCIES"][0]
     keypair = Keypair.from_secret(private_key)
     account = url.load_account(keypair.public_key)
     builder = TransactionBuilder(
-        source_account=account, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE
+        source_account=account, network_passphrase=network_passphrase()
     )
     asset = Asset(asset_info["code"], asset_info["issuer"])
     builder.append_change_trust_op(asset=asset).set_timeout(30)
@@ -684,6 +1031,103 @@ def trustline():
     envelope.sign(keypair)
     response = url.submit_transaction(envelope)
     return response["successful"]
+
+
+def direct_transfer():
+    print_formatted_text(HTML("<ansiblue>\n### DIRECT TRANSFER ###</ansiblue>\n"))
+    print("direct transfer allows you to send assets to another account")
+    print("direct transfer e.g. EURT 10")
+    res = session.prompt("direct transfer> ")
+    rlen = res.split()
+    if len(rlen) > 1:
+        asset, amount = res.split()[0], res.split()[1]
+        try:
+            if asset is not None:
+                _asset_issuer, toml_link = get_stellar_toml(asset=asset)
+                token = auth(toml_link=toml_link)
+                # print(token)
+                if token is not None:
+                    if "DIRECT_PAYMENT_SERVER" in toml_link:
+                        if toml_link["DIRECT_PAYMENT_SERVER"] is not None:
+                            # remitter_email = session.prompt("remitter email> ")
+                            # remitter_first_name = session.prompt(
+                            #     "remitter_first_name> "
+                            # )
+                            # remitter_last_name = session.prompt("remitter_last_name> ")
+                            # remitter_phone_number = session.prompt(
+                            #     "remitter_phone_number> "
+                            # )
+                            # beneficiary_email = session.prompt("beneficiary_email> ")
+                            # beneficiary_first_name = session.prompt(
+                            #     "beneficiary_first_name> "
+                            # )
+                            # beneficiary_last_name = session.prompt(
+                            #     "beneficiary_last_name> "
+                            # )
+                            # beneficiary_bank_iban = session.prompt(
+                            #     "beneficiary_bank_iban> "
+                            # )
+                            # beneficiary_bank_bic = session.prompt(
+                            #     "beneficiary_bank_bic> "
+                            # )
+                            # beneficiary_phone_number = session.prompt(
+                            #     "beneficiary_phone_number> "
+                            # )
+                            payload = {
+                                "amount": amount,
+                                "asset_code": asset,
+                                "fields": {
+                                    # "transaction": {
+                                    #     "remitter_email": remitter_email,
+                                    #     "remitter_first_name": remitter_first_name,
+                                    #     "remitter_last_name": remitter_last_name,
+                                    #     "remitter_phone_number": remitter_phone_number,
+                                    #     "beneficiary_email": beneficiary_email,
+                                    #     "beneficiary_first_name": beneficiary_first_name,
+                                    #     "beneficiary_last_name": beneficiary_last_name,
+                                    #     "beneficiary_bank_iban": beneficiary_bank_iban,
+                                    #     "beneficiary_bank_bic": beneficiary_bank_bic,
+                                    #     "beneficiary_phone_number": beneficiary_phone_number,
+                                    # }
+                                    "transaction": {
+                                        "remitter_email": "qaisar@test.com",
+                                        "remitter_first_name": "test",
+                                        "remitter_last_name": "test",
+                                        "remitter_phone_number": "123456789",
+                                        "beneficiary_email": "chris@test.com",
+                                        "beneficiary_first_name": "chris",
+                                        "beneficiary_last_name": "larson",
+                                        "beneficiary_bank_iban": "123456789",
+                                        "beneficiary_bank_bic": "123",
+                                        "beneficiary_phone_number": "123456789",
+                                    }
+                                },
+                            }
+                            print(payload)
+                            headers = {"Authorization": "Bearer " + token}
+                            url = toml_link["DIRECT_PAYMENT_SERVER"] + "/transactions"
+                            response = requests.post(
+                                url, json=payload, headers=headers
+                            ).json()
+                            print(response)
+                        else:
+                            print("Direct Payment not supported for " + asset)
+                            return
+                    else:
+                        print("Direct Payment not supported for " + asset)
+                        return
+                else:
+                    print("Auth server not found for " + asset)
+                    return
+            else:
+                print("Please enter valid asset")
+                return
+        except Exception:
+            print("Transaction format error")
+            return
+    else:
+        print("Request format error")
+        return
 
 
 def main():
@@ -724,18 +1168,26 @@ def main():
             set_var(text)
         elif text == "version" or text == "v":
             print("VERSION: " + VERSION)
+        elif text[0] == "d" and text[1] == "t":
+            direct_transfer()
+        elif text[0] == "t":
+            transactions()
+        elif text[0] == "t" and text[1] == "t":
+            trust_asset(text)
+        elif text[0] == "u" and text[1] == "t":
+            trust_asset(text, untrust=True)
         elif text[0] == "d":
             deposit(text)
         elif text[0] == "w":
             withdrawal(text)
-        # elif text[0] == "t":
-        #     trust_asset(text)
-        # elif text[0] == "u":
-        #     trust_asset(text)
         elif text[0] == "s":
             send_asset(text)
         elif text[0] == "!":
             os.system(text[1:])
+        elif text[0] == "p" and text[1] == "p" and text[2] == "s":
+            path_payment_send(text)
+        elif text[0] == "p" and text[1] == "p" and text[2] == "r":
+            path_payment_receive(text)
         elif text == "cls":
             if platform.system() == "Windows":
                 os.system("cls")
